@@ -14,9 +14,25 @@ public class ArrayUtils {
 	}
 	
 	/**
+	 * 数据交换
+	 */
+	public static void swap(double[] array, int i, int j) {
+		double temp = array[i];
+		array[i] = array[j];
+		array[j] = temp;
+	}
+	
+	/**
 	 * 打印数组元素信息
 	 */
 	public static void print(int[] array) {
+		System.out.println(Arrays.toString(array));
+	}
+	
+	/**
+	 * 打印数组元素信息
+	 */
+	public static void print(double[] array) {
 		System.out.println(Arrays.toString(array));
 	}
 
