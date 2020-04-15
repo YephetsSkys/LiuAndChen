@@ -41,5 +41,6 @@
     </build>
     <modules>
         <module>sort</module>
+        <module>http</module>
     </modules>
 </project>

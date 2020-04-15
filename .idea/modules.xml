@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/LiuAndChen.iml" filepath="$PROJECT_DIR$/LiuAndChen.iml" />
+      <module fileurl="file://$PROJECT_DIR$/thinking-in-interview/http/http.iml" filepath="$PROJECT_DIR$/thinking-in-interview/http/http.iml" />
       <module fileurl="file://$PROJECT_DIR$/thinking-in-interview/sort/sort.iml" filepath="$PROJECT_DIR$/thinking-in-interview/sort/sort.iml" />
       <module fileurl="file://$PROJECT_DIR$/thinking-in-interview/thinking-in-interview.iml" filepath="$PROJECT_DIR$/thinking-in-interview/thinking-in-interview.iml" />
     </modules>

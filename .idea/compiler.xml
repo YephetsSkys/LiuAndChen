@@ -6,10 +6,12 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="http" />
         <module name="sort" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
+      <module name="http" target="1.8" />
       <module name="sort" target="1.8" />
       <module name="thinking-in-interview" target="1.8" />
     </bytecodeTargetLevel>
