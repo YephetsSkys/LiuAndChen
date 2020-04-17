@@ -1,0 +1,106 @@
+ jps
+
+ 1296 MustDeadLoackQuestion
+ 1297 Launcher
+ 614
+ 1017 KotlinCompileDaemon
+ 1342 Jps
+
+ jstack 1296
+
+ 2020-04-17 15:56:22
+ Full thread dump Java HotSpot(TM) 64-Bit Server VM (25.121-b13 mixed mode):
+
+ "Attach Listener" #12 daemon prio=9 os_prio=31 tid=0x00007fc86d8b8000 nid=0x3e03 waiting on condition [0x0000000000000000]
+    java.lang.Thread.State: RUNNABLE
+
+ "DestroyJavaVM" #11 prio=5 os_prio=31 tid=0x00007fc86d8a3000 nid=0x1603 waiting on condition [0x0000000000000000]
+    java.lang.Thread.State: RUNNABLE
+
+ "t2" #10 prio=5 os_prio=31 tid=0x00007fc86c04f800 nid=0x4503 waiting for monitor entry [0x0000700005b3e000]
+    java.lang.Thread.State: BLOCKED (on object monitor)
+         at com.interview.死锁的分析.MustDeadLoackQuestion.run(MustDeadLoackQuestion.java:43)
+         - waiting to lock <0x00000007956d4468> (a java.lang.Object)
+         - locked <0x00000007956d4478> (a java.lang.Object)
+         at java.lang.Thread.run(Thread.java:745)
+
+ "t1" #9 prio=5 os_prio=31 tid=0x00007fc86d063000 nid=0x4603 waiting for monitor entry [0x0000700005a3b000]
+    java.lang.Thread.State: BLOCKED (on object monitor)
+         at com.interview.死锁的分析.MustDeadLoackQuestion.run(MustDeadLoackQuestion.java:29)
+         - waiting to lock <0x00000007956d4478> (a java.lang.Object)
+         - locked <0x00000007956d4468> (a java.lang.Object)
+         at java.lang.Thread.run(Thread.java:745)
+
+ "Service Thread" #8 daemon prio=9 os_prio=31 tid=0x00007fc86c021000 nid=0x3a03 runnable [0x0000000000000000]
+    java.lang.Thread.State: RUNNABLE
+
+ "C1 CompilerThread2" #7 daemon prio=9 os_prio=31 tid=0x00007fc86c818000 nid=0x3903 waiting on condition [0x0000000000000000]
+    java.lang.Thread.State: RUNNABLE
+
+ "C2 CompilerThread1" #6 daemon prio=9 os_prio=31 tid=0x00007fc86c01e000 nid=0x4903 waiting on condition [0x0000000000000000]
+    java.lang.Thread.State: RUNNABLE
+
+ "C2 CompilerThread0" #5 daemon prio=9 os_prio=31 tid=0x00007fc86d831000 nid=0x3703 waiting on condition [0x0000000000000000]
+    java.lang.Thread.State: RUNNABLE
+
+ "Signal Dispatcher" #4 daemon prio=9 os_prio=31 tid=0x00007fc86d830800 nid=0x3503 runnable [0x0000000000000000]
+    java.lang.Thread.State: RUNNABLE
+
+ "Finalizer" #3 daemon prio=8 os_prio=31 tid=0x00007fc86d01e800 nid=0x5003 in Object.wait() [0x0000700005326000]
+    java.lang.Thread.State: WAITING (on object monitor)
+         at java.lang.Object.wait(Native Method)
+         - waiting on <0x0000000795588ec8> (a java.lang.ref.ReferenceQueue$Lock)
+         at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:143)
+         - locked <0x0000000795588ec8> (a java.lang.ref.ReferenceQueue$Lock)
+         at java.lang.ref.ReferenceQueue.remove(ReferenceQueue.java:164)
+         at java.lang.ref.Finalizer$FinalizerThread.run(Finalizer.java:209)
+
+ "Reference Handler" #2 daemon prio=10 os_prio=31 tid=0x00007fc86d829800 nid=0x2d03 in Object.wait() [0x0000700005223000]
+    java.lang.Thread.State: WAITING (on object monitor)
+         at java.lang.Object.wait(Native Method)
+         - waiting on <0x0000000795586b68> (a java.lang.ref.Reference$Lock)
+         at java.lang.Object.wait(Object.java:502)
+         at java.lang.ref.Reference.tryHandlePending(Reference.java:191)
+         - locked <0x0000000795586b68> (a java.lang.ref.Reference$Lock)
+         at java.lang.ref.Reference$ReferenceHandler.run(Reference.java:153)
+
+ "VM Thread" os_prio=31 tid=0x00007fc86d825000 nid=0x5103 runnable
+
+ "GC task thread#0 (ParallelGC)" os_prio=31 tid=0x00007fc86d806800 nid=0x1d07 runnable
+
+ "GC task thread#1 (ParallelGC)" os_prio=31 tid=0x00007fc86d002800 nid=0x1b03 runnable
+
+ "GC task thread#2 (ParallelGC)" os_prio=31 tid=0x00007fc86d003000 nid=0x5403 runnable
+
+ "GC task thread#3 (ParallelGC)" os_prio=31 tid=0x00007fc86d004000 nid=0x5303 runnable
+
+ "VM Periodic Task Thread" os_prio=31 tid=0x00007fc86d87c800 nid=0x3b03 waiting on condition
+
+ JNI global references: 6
+
+
+ Found one Java-level deadlock:
+ =============================
+ "t2":
+   waiting to lock monitor 0x00007fc86c812d68 (object 0x00000007956d4468, a java.lang.Object),
+   which is held by "t1"
+ "t1":
+   waiting to lock monitor 0x00007fc86c815758 (object 0x00000007956d4478, a java.lang.Object),
+   which is held by "t2"
+
+ Java stack information for the threads listed above:
+ ===================================================
+ "t2":
+         at com.interview.死锁的分析.MustDeadLoackQuestion.run(MustDeadLoackQuestion.java:43)
+         - waiting to lock <0x00000007956d4468> (a java.lang.Object)
+         - locked <0x00000007956d4478> (a java.lang.Object)
+         at java.lang.Thread.run(Thread.java:745)
+ "t1":
+         at com.interview.死锁的分析.MustDeadLoackQuestion.run(MustDeadLoackQuestion.java:29)
+         - waiting to lock <0x00000007956d4478> (a java.lang.Object)
+         - locked <0x00000007956d4468> (a java.lang.Object)
+         at java.lang.Thread.run(Thread.java:745)
+
+ Found 1 deadlock.
+
+

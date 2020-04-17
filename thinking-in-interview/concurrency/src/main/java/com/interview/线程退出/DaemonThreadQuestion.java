@@ -2,6 +2,7 @@ package com.interview.线程退出;
 
 /**
  * 守护线程的理解: https://www.jianshu.com/p/6b68af3e5738
+ * https://blog.csdn.net/weixin_40087231/article/details/90031253
  * @Author: liuman
  * @Date: 2020-04-17 11:13
  * @Descript: 线程退出时,守候子线程的例子
