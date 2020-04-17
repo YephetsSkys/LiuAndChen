@@ -6,11 +6,13 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="concurrency" />
         <module name="http" />
         <module name="sort" />
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
+      <module name="concurrency" target="1.8" />
       <module name="http" target="1.8" />
       <module name="sort" target="1.8" />
       <module name="thinking-in-interview" target="1.8" />

@@ -42,5 +42,6 @@
     <modules>
         <module>sort</module>
         <module>http</module>
+        <module>concurrency</module>
     </modules>
 </project>
