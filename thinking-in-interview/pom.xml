@@ -43,5 +43,6 @@
         <module>sort</module>
         <module>http</module>
         <module>concurrency</module>
+        <module>jdk8</module>
     </modules>
 </project>
