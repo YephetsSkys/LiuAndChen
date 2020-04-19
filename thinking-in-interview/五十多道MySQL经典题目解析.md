@@ -315,6 +315,18 @@ MySQL有三种锁的级别：页级、表级、行级。
 >- 查出的死锁线程杀死 kill。
 >- 设置并减小锁的超时时间(`innodb_lock_wait_timeout`)。
 
+#### 9.两个INSERT也能发生死锁？
+
+在插入之前，会先在插入记录所在的间隙加上一个插入意向gap锁，并发的事务可以对同一个gap加I锁。如果insert 的事务出现了duplicate-key error ，事务会对duplicate index record加共享锁。这个共享锁在并发的情况下是会产生死锁的，比如有两个并发的insert都对要对同一条记录加共享锁，而此时这条记录又被其他事务加上了排它锁，排它锁的事务提交或者回滚后，两个并发的insert操作是会发生死锁的。  如下图：
+
+| session1 | session2 | session3 |
+| -------- | -------- | -------- |
+| begin;<br>delete from d where i=1;<br>持有i=1的record lock(X) | | |
+| | begin;<br>insert into d select 1;<br>需要判断唯一性，检测到冲突，请求i=1的next-key lock(S)被阻塞，等待ing | |
+| | | begin;<br>insert into d select 1;<br>需要判断唯一性，检测到冲突，请求i=1的next-key lock(S)被阻塞，等待ing |
+| commit;<br>提交，释放i=1上的锁 | | |
+| | 成功获取i=1的next-key lock(S)；<br>请求i=1的record lock(X)锁；<br>但session3上已持有i=1的next-key(S)，被阻塞、等待中；<br><br>后面session3检测到死锁冲突后，session2才insert成功；<br><br>Query OK, 1 row affected (11.82 sec)<br>Records: 1 Duplicates: 0 Warnings: 0 | 成功获取i=1的next-key lock(S)；<br>请求i=1的record lock(X)锁；<br>触发死锁检测，失败、回滚；<br><br>ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction |
+
 
 ## 五、事务相关
 
