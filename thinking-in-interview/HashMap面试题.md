@@ -1,0 +1,60 @@
+#### 1.hashMap 的实现原理？
+
+>- https://blog.csdn.net/qq_37113604/article/details/81353626
+
+
+#### 2.hashMap负载因子为什么是0.75？怎么扩容的？
+
+>- https://www.jianshu.com/p/2449cd914e3c
+>- https://www.cnblogs.com/zengweiming/p/8853144.html
+
+>- HashMap负载因子为什么是0.75？
+HashMap有一个初始容量大小，默认是16
+static final int DEAFULT_INITIAL_CAPACITY = 1 << 4; // aka 16    
+为了减少冲突概率，当HashMap的数组长度达到一个临界值就会触发扩容，把所有元素rehash再放回容器中，这是一个非常耗时的操作。
+而这个临界值由负载因子和当前的容量大小来决定：
+DEFAULT_INITIAL_CAPACITY*DEFAULT_LOAD_FACTOR
+即默认情况下数组长度是16*0.75=12时，触发扩容操作。
+所以使用hash容器时尽量预估自己的数据量来设置初始值。
+那么，为什么负载因子要默认为0.75，在HashMap注释中有这么一段：
+
+Ideally, under random hashCodes, the frequency of
+* nodes in bins follows a Poisson distribution
+* (http://en.wikipedia.org/wiki/Poisson_distribution) with a
+* parameter of about 0.5 on average for the default resizing
+* threshold of 0.75, although with a large variance because of
+* resizing granularity. Ignoring variance, the expected
+* occurrences of list size k are (exp(-0.5) * pow(0.5, k) /
+* factorial(k)). The first values are:
+*
+* 0:    0.60653066
+* 1:    0.30326533
+* 2:    0.07581633
+* 3:    0.01263606
+* 4:    0.00157952
+* 5:    0.00015795
+* 6:    0.00001316
+* 7:    0.00000094
+* 8:    0.00000006
+* more: less than 1 in ten million
+*
+
+
+>- 在理想情况下，使用随机哈希吗，节点出现的频率在hash桶中遵循泊松分布，同时给出了桶中元素的个数和概率的对照表。
+从上表可以看出当桶中元素到达8个的时候，概率已经变得非常小，也就是说用0.75作为负载因子，每个碰撞位置的链表长度超过8个是几乎不可能的。
+hash容器指定初始容量尽量为2的幂次方。
+HashMap负载因子为0.75是空间和时间成本的一种折中。
+
+ 
+
+>- 泊松分布：https://blog.csdn.net/ccnt_2012/article/details/81114920
+
+#### 3.hashMap怎么添加元素的？为什么hashMap是不安全的?
+>- https://blog.csdn.net/swpu_ocean/article/details/88917958
+
+>- 总结
+>- HashMap的线程不安全主要体现在下面两个方面：
+>- 1.在JDK1.7中，当并发执行扩容操作时会造成环形链和数据丢失的情况。
+>- 2.在JDK1.8中，在并发执行put操作时会发生数据覆盖的情况。
+
+
