@@ -183,12 +183,49 @@ Boss线程池用于接收客户端的 TCP 连接，IO线程池用于处理 I/O �
 
 ## 二、源码相关
 
+#### 1.JDK的ByteBuffer和Netty的ByteBuf对比
+
+Netty的ByteBuf的特点如下：
+>- 1.Netty的ByteBuf采用读写索引分离的策略（readerIndex与writerIndex），一个初始化（里面尚未有任何数据）的ByteBuf的readerIndex与writerIndex都为0；
+>- 2.当读索引与写索引处于同一个位置时，如果我们继续读取，就会抛出IndexOutofBoundsException；
+>- 3.对于ByteBuf的任何读写操作都会分别单独维护读索引与写索引。maxCapacity最大容量默认的限制就是Integer.MAX_VALUE。
+
+JDK的ByteBuffer的缺点：
+>- 1.ByteBuffer长度固定，一旦分配完成，它的容量不能动态扩展和收缩，当需要编码的POJO对象大于ByteBuffer的容量时，会发生索引越界异常。解决办法就是每次put的时候检查剩余空间不足的时候重新创建一个新的ByteBuffer对象，并将之前的ByteBuffer复制到新创建的ByteBuffer中，最后释放老的ByteBuffer；
+>- 2.ByteBuffer只使用一个position指针来标识位置信息，在进行读写切换时就需要调用flip()或是rewind()方法，使用起来很不方便。
+
+Netty的ByteBuf的优点：
+>- 1.存储字节的数组是动态，其最大值默认是Integer.MAX_VALUE。这里的动态性体现在write方法中，write方法在执行时会判断buffer容量，如果不足则自动扩容。
+>- 2.ByteBuf的读写索引是完全分开的，使用起来方便。
+
+#### 2.Netty的ByteBuf分类
+
+从内存分配的角度：
+
+1.堆内存(HeapByteBuf)字节缓冲区：特点是内存的分配和回收速度快，而已被 JVM自动回收；缺点就是如果进行Socket的I/O读写，需要额外做一次内存复制，将堆内存对应的缓冲区复制到内核Channel中，性能会有一定程度的下降。
+
+2.直接内存(DirectByteBuf)字节缓冲区：非堆内存，它在堆外进行内存分配，相比于堆内存，它的分配和回收速度会慢一些，但是将它写入或者从Socket Channel中读取时，由于少了一次内存复制，速度比堆内存要快；
+
+从内存回收角度：
+
+1.基于对象池的ByteBuf，基于对象池的ByteBuf而已重用ByteBuf对象，它维护了一个内存池，可以循环利用创建的ByteBuf，提升内存的使用效率，降低由于高负载导致的频繁GC。但是内存池的管理和维护更加复杂。
+
+2.普通ByteBuf，使用简单，不需要维护。
+
+#### 3.ByteBuf扩容逻辑
+
+我们通过`io.netty.buffer.AbstractByteBuf`的中`ensureWritable0`方法，其中有一段`calculateNewCapacity`调用中，会传入当前需要的扩容到的容量和最大容量大小。
+
+代码中，首先判断如果需要的容量超过4M，并且不超过最大容量限制，则直接扩容指定的容量，否则只扩容最大容量。
+
+如果需要的容量小于4M，则从64字节开始进行倍增，直到倍增后的结果大于或等于需要的容量值。
+
+采用倍增或步进算法的原因：如果以minNewCapacity作为目标容量，则本地扩容后如果还需要再写入，则需要再次扩容，频繁的内存复制会导致性能下降；
+
+采用先倍增后步进的原因：当内存比较小的情况下，倍增操作并不会带来太多的内存浪费，例如64字节->128字节->256字节。但是当内存增长到一定阈值后，再进行本增可能会带来大量的内存浪费，如10MB倍增后为20MB，但是系统可能只需要12MB。因此，达到4M阈值后就需要以步进的方式对内存进行平滑的扩张。
+
 ## 三、性能与优化
 
 ## 四、其它
 
 
-https://www.cnblogs.com/duan2/p/8819910.html
-https://www.lagou.com/lgeduarticle/15654.html
-https://www.jianshu.com/p/544c4ea707d7?tdsourcetag=s_pcqq_aiomsg
-https://segmentfault.com/a/1190000021054503
