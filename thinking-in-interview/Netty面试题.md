@@ -181,6 +181,66 @@ Boss线程池用于接收客户端的 TCP 连接，IO线程池用于处理 I/O �
 >- 4.资源代价：NioEventLoopGroup的创建并不是廉价的，它会聚合Selector，Selector本身就会消耗句柄资源。
 >- 5.线程切换的代价：如果不是追求极致的性能，线程切换只要不过于频繁，它的代价还是可以接受的。
 
+#### 13.Netty的多线程编程最佳实践
+
+>- 1.创建两个 NioEventLoopGroup,用于逻辑隔离 NIO Acceptor和 NIO I/O线程；
+>- 2.尽量不要在 ChannelHandler中启动用户线程(解码后用于将POJO消息派发到后端业务线程的除外)；
+>- 3.解码要放在NIO线程调用的解码 Handler中进行,不要切换到用户线程中完成消息的解码；
+>- 4.如果业务逻辑操作非常简单,没有复杂的业务逻辑计算,没有可能会导致线程被阻塞的磁盘操作、数据库操作、网路操作等,可以直接在NIO线程上完成业务逻辑编排,不需要切换到用户线程；
+>- 5.如果业务逻辑处理复杂,不要在NIO线程上完成,建议将解码后的POJO消息封装成Task,派发到业务线程池中由业务线程执行,以保证NIO线程尽快被释放,处理其他的IO操作；
+
+#### 14.Netty应该设置的线程数
+
+默认情况下，NioEventLoopGroup默认创建CPU*2或者指定Java启动参数io.netty.eventLoopThreads=n的线程数。那如何计算实际需要的线程数呢？
+
+推荐的线程数量计算公式有以下两种：
+>- 公式一:线程数量=(线程总时间/瓶颈资源时间)×瓶颈资源的线程并行数
+>- 公式二:QPS=1000/线程总时间×线程数
+
+由于用户场景的不同,对于一些复杂的系统,实际上很难计算出最优线程配置,只能是根据测试数据和用户场景,结合公式给出一个相对合理的范围,然后对范围内的数据进行性能测试,选择相对最优值。
+
+#### 15.Netty 中有哪几种重要组件？
+
+>- Channel：Netty 网络操作抽象类，它除了包括基本的 I/O 操作，如 bind、connect、read、write 等；
+>- EventLoop：主要是配合 Channel 处理 I/O 操作，用来处理连接的生命周期中所发生的事情；
+>- ChannelFuture：Netty 框架中所有的 I/O 操作都为异步的，因此我们需要 ChannelFuture 的 addListener()注册一个 ChannelFutureListener 监听事件，当操作执行成功或者失败时，监听就会自动触发返回结果；
+>- ChannelHandler：充当了所有处理入站和出站数据的逻辑容器。ChannelHandler 主要用来处理各种事件，这里的事件很广泛，比如可以是连接、数据接收、异常、数据转换等；
+>- ChannelPipeline：为 ChannelHandler 链提供了容器，当 channel 创建时，就会被自动分配到它专属的 ChannelPipeline，这个关联是永久性的；
+
+#### 16.Channel与ChannelHandlerContext执行write方法的区别？
+
+在Netty中，有两种发送消息的方式。你可以直接写在Channel中，也可以写到和ChannelHandler相关联的ChannelHandlerContext对象中。前一种方式将会导致消息从ChannelPipeline的尾端开始流动，而后者将导致消息从ChannelPipline中的下一个ChannelHanlder开始流动。
+
+这个是社么意思呢？举例说明：
+
+```
+public class InitialierHandler extends ChannelInitializer<SocketChannel> {
+    @Override
+    protected void initChannel(SocketChannel socketChannel) throws Exception {
+        socketChannel.pipeline().addLast(new RequestChannelHandler1());
+        socketChannel.pipeline().addLast(new ResponseChannelHandler1());
+        socketChannel.pipeline().addLast(new RequestChannelHandler2());
+        socketChannel.pipeline().addLast(new ResponseChannelHandler2());
+    }
+}
+```
+
+添加顺序分别为  in1 -> out1 -> in2 -> out2。
+
+我们使用Channel的write从in2中输出，则消息会从in2 -> out2 -> out1流转；
+
+我们使用ChannelHandlerContext的write从in2中输出，则消息会从 in2 -> out1 流转；
+
+#### 17.Netty中的write和writeAndFlush的区别是什么？
+
+前者只是进行了写,(写到了ByteBuf) 却没有将内容刷新到ByteBuffer,没有刷新到缓存中,就没办法进一步把它写入jdk原生的ByteBuffer中, 而writeAndFlush()就比较方便,先把msg写入ByteBuf,然后直接刷进socket,发送出去。
+
+#### 18.什么是写队列 ? 作用是啥?
+
+当我们使用write来写入消息的时候，传递到Handler的最开始的位置，怎么办? unsafe也无法把它写给客户端, 难道丢弃不成？
+
+于是写队列就解决了这个问题，它以链表当做数据结构，新传播过来的ByteBuf就会被他封装成一个一个的节点(entry)进行维护。如果Buffer容量超过了WriteBufferHighWaterMark（默认64字节），会将Channel标记为不可写状态，并会自动触发一个发送消息任务。
+
 ## 二、源码相关
 
 #### 1.JDK的ByteBuffer和Netty的ByteBuf对比

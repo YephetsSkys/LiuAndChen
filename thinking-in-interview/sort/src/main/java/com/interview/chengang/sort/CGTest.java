@@ -1,11 +1,15 @@
 package com.interview.chengang.sort;
 
-import io.netty.buffer.ByteBuf;
+import io.netty.channel.nio.NioEventLoop;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
 
 public class CGTest {
 
 	public static void main(String[] args) {
-		ByteBuf ss = null;
+		NioEventLoop s = null;
+		NioEventLoopGroup b = null;
+		NioSocketChannel c = null;
 	}
 
 }
