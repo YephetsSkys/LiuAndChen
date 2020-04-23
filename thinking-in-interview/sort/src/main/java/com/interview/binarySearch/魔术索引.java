@@ -32,6 +32,8 @@ public class 魔术索引 {
         int array[] = {1,1,2,3};
         int magicIndex = findMagicIndex(array);
         System.out.println("magicIndex:" + magicIndex);
+        magicIndex = findMagicIndex2(array);
+        System.out.println("magicIndex:" + magicIndex);
     }
 
     public static int findMagicIndex(int[] nums) {
@@ -56,4 +58,19 @@ public class 魔术索引 {
         }
         return left - 1;
     }
+    
+    private static int findMagicIndex2(int[] array) {
+		int idx = 0;
+		while(idx < array.length) {
+			if(array[idx] == idx) {
+				return idx;
+			} else if(array[idx] > idx) {
+				idx = array[idx];
+			} else {
+				idx++;
+			}
+		}
+		return -1;
+	}
+    
 }
