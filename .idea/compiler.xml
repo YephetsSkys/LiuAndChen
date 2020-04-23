@@ -6,6 +6,8 @@
         <sourceOutputDir name="target/generated-sources/annotations" />
         <sourceTestOutputDir name="target/generated-test-sources/test-annotations" />
         <outputRelativeToContentRoot value="true" />
+        <module name="annotationserviceapi" />
+        <module name="annotationserviceproducer" />
         <module name="concurrency" />
         <module name="http" />
         <module name="jdk8" />
@@ -13,10 +15,13 @@
       </profile>
     </annotationProcessing>
     <bytecodeTargetLevel>
+      <module name="annotationserviceapi" target="1.8" />
+      <module name="annotationserviceproducer" target="1.8" />
       <module name="concurrency" target="1.8" />
       <module name="http" target="1.8" />
       <module name="jdk8" target="1.8" />
       <module name="sort" target="1.8" />
+      <module name="SpringBootdubboannotation" target="1.8" />
       <module name="thinking-in-interview" target="1.8" />
     </bytecodeTargetLevel>
   </component>

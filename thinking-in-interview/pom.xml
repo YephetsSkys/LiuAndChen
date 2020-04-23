@@ -7,7 +7,8 @@
     <groupId>com.interview</groupId>
     <artifactId>thinking-in-interview</artifactId>
     <packaging>pom</packaging>
-    <version>pom</version>
+    <version>1.0-SNAPSHOT</version>
+
 
     <build>
         <!-- finalName指定打包生成的文件名，默认为工程名-版本号 -->

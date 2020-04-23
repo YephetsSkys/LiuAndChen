@@ -59,7 +59,7 @@ public class ThreadPoolDiscardOldestPolicyTest {
     }
 
     public static void main(String[] args) {
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < 5; i++) {
             Runnable runnable = new Runnable() {
                 @Override
                 public void run() {
