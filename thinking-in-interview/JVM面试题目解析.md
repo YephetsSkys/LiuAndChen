@@ -133,7 +133,192 @@ Java内存模型规定了所有的变量都存储在主内存中，每条线程�
 
 查找一个类，这是一个受保护的方法，也是重载ClassLoader时，重要的系统扩展点。这个方法会在loadClass()时被调用，用于自定义查找类的逻辑。如果不需要修改类加载默认机制，只是想改变类加载的形式，就可以重载该方法。
 
-#### 12.
+#### 12.JVM内存为什么要分成新生代，老年代，持久代（元空间）？
+
+分代主要是根据每一块内存区间的特点，使用不同的回收算法，以提高垃圾回收的效率。
+
+在虚拟机中，大部分新建对象都放入到年轻代的内存区域，年轻代的特点就是对象朝生夕灭，至少90%的新建对象都会很快被回收，因此年轻代就选择效率较高的复制算法。
+
+当对象回收多次依然存活，就被存放到老年代，如果老年代依然使用复制算法，那么将需要复制大量的对象，回收的性价比太低了，肯定这种做法是不可取的，。根据分代的思想，可以对老年代的回收使用与新生代不同的标记-压缩/清除算法，以提高垃圾回收效率。
+
+#### 13.新生代中为什么要分为Eden和Survivor？为什么要设置两个Survivor区？
+
+>- 如果没有Survivor，Eden区每进行一次Minor GC，存活的对象就会被送到老年代。老年代很快被填满，触发Major GC老年代的内存空间远大于新生代，进行一次Full GC消耗的时间比Minor GC长得多,所以需要分为Eden和Survivor。
+>- Survivor的存在意义，就是减少被送到老年代的对象，进而减少Full GC的发生，Survivor的预筛选保证，只有经历15次(此值是极端情况下，不准确)Minor GC还能在新生代中存活的对象，才会被送到老年代。
+>- 设置两个Survivor区最大的好处就是解决了碎片化，刚刚新建的对象在Eden中，经历一次Minor GC，Eden中的存活对象就会被移动到第一块survivor space S0，Eden被清空；等Eden区再满了，就再触发一次Minor GC，Eden和S0中的存活对象又会被复制送入第二块survivor space S1（这个过程非常重要，因为这种复制算法保证了S1中来自S0和Eden两部分的存活对象占用连续的内存空间，避免了碎片化的发生）。
+
+#### 14.引起类加载操作的五个行为？
+
+>- 1.遇到new、getstatic、putstatic、或invokestatic这4条字节码指令时；
+>- 2.使用java.lang.reflect包的方法对类进行反射调用的时候；
+>- 3.当初始化一个类的时候，如果发现其父类还没有进行过初始化，则需要先触发其父类的初始化；
+>- 4.当虚拟机启动的时候，用户需要指定一个要执行的主类，虚拟机会先初始化这个主类；
+>- 5.当使用`invokedynamic`指令的时候，如果一个MethodHandle实例最后的解析结果`REF_getStatic`、`REF_putStatic`、`REF_invokeStatic`的方法句柄，并且这个方法句柄所对应的类没有进行初始化，则需要先触发其初始化；
+
+#### 15.Java对象创建时机？
+
+>- 1.使用new关键字创建对象；
+>- 2.使用Class类的newInstance方法(反射机制)；
+>- 3.使用Constructor类的newInstance方法(反射机制)；
+>- 4.使用Clone方法创建对象；
+>- 5.使用(反)序列化机制创建对象；
+
+#### 16.说说你知道的几种主要的JVM参数？
+
+1) 堆栈配置相关
+
+```
+java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX:SurvivorRatio=4 -XX:MaxTenuringThreshold=0
+```
+
+-Xmx3550m： 最大堆大小为3550m。<br>
+-Xms3550m： 设置初始堆大小为3550m。<br>
+-Xmn2g： 设置年轻代大小为2g。<br>
+-Xss128k： 每个线程的堆栈大小为128k。<br>
+-XX:MaxPermSize： 设置持久代大小为16m<br>
+-XX:NewRatio=4: 设置年轻代（包括Eden和两个Survivor区）与年老代的比值（除去持久代）。<br>
+-XX:SurvivorRatio=4： 设置年轻代中Eden区与Survivor区的大小比值。设置为4，则两个Survivor区与一个Eden区的比值为2:4，一个Survivor区占整个年轻代的1/6<br>
+-XX:MaxTenuringThreshold=0： 设置垃圾最大年龄。如果设置为0的话，则年轻代对象不经过Survivor区，直接进入年老代。<br>
+
+2) 垃圾收集配置相关
+
+```
+-XX:+UseSerialGC -XX:+UseParallelGC -XX:ParallelGCThreads=20 -XX:+UseConcMarkSweepGC -XX:CMSFullGCsBeforeCompaction=5 -XX:+UseCMSCompactAtFullCollection
+```
+
+-XX:+UseSerialGC：选择单线程垃圾收集器。
+-XX:+UseParallelGC： 选择垃圾收集器为并行收集器。<br>
+-XX:ParallelGCThreads=20： 配置并行收集器的线程数。<br>
+-XX:+UseConcMarkSweepGC： 设置年老代为并发收集。<br>
+-XX:CMSFullGCsBeforeCompaction：由于并发收集器不对内存空间进行压缩、整理，所以运行一段时间以后会产生“碎片”，使得运行效率降低。此值设置运行多少次GC以后对内存空间进行压缩、整理。<br>
+-XX:+UseCMSCompactAtFullCollection： 打开对年老代的压缩。可能会影响性能，但是可以消除碎片。<br>
+
+3) 辅助信息相关
+
+```
+-XX:+PrintGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintHeapAtGC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath -XX:ErrorFile -Xloggc
+```
+
+打印相关的GC日志等信息或输出OOM内存堆信息
+
+#### 17.请说说对象头的组成？
+
+对象在内存中存储的布局可以分为三块区域：对象头（Header）、实例数据（Instance Data）和对齐填充（Padding）；
+
+我们以32位虚拟机来说明，对象头分成两部分，一个是`Mark Word`（4字节32位），一个是元数据指针(4字节32位)，一共8字节（如果在64位虚拟机中，不开启指针压缩，则一共16字节；开启指针压缩，则元数据为4字节，一共12字节）。
+
+<table>
+	<tr>
+		<td rowspan="2">锁状态</td>
+		<td colspan="2">25bit</td>
+		<td rowspan="2">4bit</td>
+		<td>1bit</td>
+		<td>2bit</td>
+	</tr>
+	<tr>
+		<td>23bit</td>
+		<td>2bit</td>
+		<td>是否偏向锁</td>
+		<td>锁标志位</td>
+	</tr>
+	<tr>
+		<td>无锁状态</td>
+		<td colspan="2">对象的hashcode</td>
+		<td>分代年龄</td>
+		<td>0</td>
+		<td>01</td>
+	</tr>
+	<tr>
+		<td>偏向锁</td>
+		<td>线程ID</td>
+		<td>Epoch</td>
+		<td>分代年龄</td>
+		<td>1</td>
+		<td>01</td>
+	</tr>
+	<tr>
+		<td>轻量级锁</td>
+		<td colspan="4">指向栈中锁记录的指针</td>
+		<td>00</td>
+	</tr>
+	<tr>
+		<td>重量级锁</td>
+		<td colspan="4">指向互斥量(重量级锁)的指针</td>
+		<td>10</td>
+	</tr>
+	<tr>
+		<td>GC标记</td>
+		<td colspan="4">空</td>
+		<td>11</td>
+	</tr>
+</table>
+
+上面展示了对象头在32位虚拟机中的一个数据结构。
+
+<table>
+	<tr>
+		<td rowspan="2">锁状态</td>
+		<td colspan="3">56bit</td>
+		<td>1bit</td>
+		<td rowspan="2">4bit</td>
+		<td>1bit</td>
+		<td>2bit</td>
+	</tr>
+	<tr>
+		<td>25bit</td>
+		<td>29bit</td>
+		<td>2bit</td>
+		<td>空</td>
+		<td>是否偏向锁</td>
+		<td>锁标志位</td>
+	</tr>
+	<tr>
+		<td>无锁</td>
+		<td>空</td>
+		<td colspan="2">31bit hashcode</td>
+		<td>空</td>
+		<td>分代年龄</td>
+		<td>0</td>
+		<td>01</td>
+	</tr>
+	<tr>
+		<td>偏向锁</td>
+		<td colspan="2">线程ID</td>
+		<td>epoch</td>
+		<td>空</td>
+		<td>分代年龄</td>
+		<td>1</td>
+		<td>01</td>
+	</tr>
+	<tr>
+		<td>轻量级锁</td>
+		<td colspan="6">指向栈中所记录的指针</td>
+		<td>00</td>
+	</tr>
+	<tr>
+		<td>重量级锁</td>
+		<td colspan="6">指向互斥量(重量级锁)的指针</td>
+		<td>10</td>
+	</tr>
+	<tr>
+		<td>GC标记</td>
+		<td colspan="6">空</td>
+		<td>11</td>
+	</tr>
+</table>
+
+上面展示了对象头在64位虚拟机中的一个数据结构。
+
+#### 18.对象的分配规则？
+
+>- 1.首选判断是否支持栈上分配，支持则直接将对象属性打散并分配到栈上（需要开启`-XX:+DoEscapeAnalysis`、`-XX:+EliminateAllocations`）。
+>- 2.其次判断是否是大对象，超过JVM配置`-XX:PretenureSizeThreshold=N`的值，则直接分配到老年代。
+>- 3.再判断是否只是TLAB`-XX:+UseTLAB`，如果支持则直接分配到线程的TLAB区，否则需要走指针碰撞分配到eden区。
+>- 4.如果新生代空间不足，则触发Minor GC，GC后对象存储到Eden区。
+
+#### 19.对象如何晋升到老年代？
+
+
 
 ### 二、垃圾回收
 
@@ -151,6 +336,12 @@ Java内存模型规定了所有的变量都存储在主内存中，每条线程�
 
 >- Minor GC通常发生在新生代的Eden区，在这个区的对象生存期短，往往发生GC的频率较高，回收速度比较快，一般采用复制-回收算法；
 >- Full GC/Major GC 发生在老年代，一般情况下，触发老年代GC的时候不会触发Minor GC，所采用的是标记-清除/整理算法；
+
+#### 4.JVM的永久代/元空间中会发生垃圾回收么？
+
+一般情况JVM是不会回收永久代的垃圾，但是如果永久代满了或者超过配置的临界值，则会触发FullGC。CMS在默认情况下也不会回收永久代，但是可以通过参数`CMSClassUnloadingEnabled`来开启，JDK6-7默认为关闭状态，JDK8为开启状态。
+
+#### 5.
 
 ### 三、JVM故障诊断与性能优化
 
