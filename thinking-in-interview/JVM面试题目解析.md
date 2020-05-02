@@ -344,7 +344,9 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 | 对齐填充 | 实例数据 |
 | | 对齐填充 |
 
-#### 22.
+#### 22.Class对象默认情况下是存在Heap里面还是Perm中（JDK8一律分配在Heap中）？
+
+Class对象默认分配在Heap中，JDK8之前如果我们设置了`-XX:+UnlockDiagnosticVMOptions`，`-XX:+JavaObjectsInPerm`这两个参数，那将分配在Perm里。其实也没啥用，主要是为了分析查找问题等。
 
 ### 二、垃圾回收
 
