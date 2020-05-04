@@ -28,7 +28,7 @@ Java内存模型规定了所有的变量都存储在主内存中，每条线程�
 
 作用于主内存的操作有：lock、unlock、read、write。
 
-作用于工作内存的操作有：load、user、assign、store。
+作用于工作内存的操作有：load、use、assign、store。
 
 对于这8中操作，虚拟机也规定了一系列规则，在执行这8中操作的时候必须遵循如下的规则：
 >- ***不允许read和load、store和write操作之一单独出现***，也就是不允许从主内存读取了变量的值但是工作内存不接收的情况，或者不允许从工作内存将变量的值回写到主内存但是主内存不接收的情况；
@@ -347,6 +347,26 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 #### 22.Class对象默认情况下是存在Heap里面还是Perm中（JDK8一律分配在Heap中）？
 
 Class对象默认分配在Heap中，JDK8之前如果我们设置了`-XX:+UnlockDiagnosticVMOptions`，`-XX:+JavaObjectsInPerm`这两个参数，那将分配在Perm里。其实也没啥用，主要是为了分析查找问题等。
+
+#### 23.volatile的实现原理？
+
+1.Java源码
+
+Java源码很简单，只需要在字段修饰中添加volatile就可以了。
+
+2.byteCode字节码
+
+字节码层面也非常的简答， 在access_flag中会标记为0x0040即可。
+
+3.JVM虚拟机规范
+
+JVM虚拟机规范要求在对volatile字段进行操作的时候，需要添加内存屏障。在对volatile变量进行写的时候，前面加StoreStore屏障，后面加StoreLoad屏障。在对volatile变量读的时候，前面加LoadLoad屏障，后面加LoadStore屏障。
+
+4.CPU级别
+
+MESI(多CPU缓存的一致性和可见性，其实就是缓存过期策略通知)或者总线锁来实现[JVM底层实际是使用总线锁来实现的，因为大部分CPU都有Lock指令]。hsdis可以看Java的反汇编指令。
+
+通过一些测试代码，再加上`java -XX:+UnlockDiagnosticVMOptions -XX:+PrintAssembly`打印JVM编译的汇编码。可以看到volatile和synchronized等都是使用底层CPU的Lock指令。
 
 ### 二、垃圾回收
 
