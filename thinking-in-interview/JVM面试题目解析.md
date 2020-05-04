@@ -389,14 +389,13 @@ TLAB是虚拟机在堆内存的eden划分出来的一块专用空间，是线程
 当请求分配的内存大于`refill_waste`的时候，会选择在堆内存中分配。若小于`refill_waste`值，则会废弃当前TLAB，重新创建TLAB进行对象内存分配。<br>
 前面的例子中，TLAB总空间100KB，使用了80KB，剩余20KB，如果设置的`refill_waste`的值为25KB，那么如果新对象的内存大于25KB，则直接堆内存分配，如果小于25KB，则会废弃掉之前的那个TLAB，重新分配一个TLAB空间，给新对象分配内存。
 
-***TLAB相关的参数：***
+***TLAB相关的参数：***<br>
 `-XX:+UseTLAB`选择表示是否开启TLAB，默认是开启；<br>
 `-XX:TLABWasteTargetPercent`选项为设置TLAB空间所占用Eden空间的百分比大小。默认是eden区的1%；<br>
 `-XX:+ResizeTLAB`选项是指TLAB的空间会在运行时不断调整，使系统达到最佳的运行状态。如果需要禁用自动调整TLAB的大小，可以使用`-XX:-ResizeTLAB`来禁用，并且使用`-XX:TLABSize`来手工指定TLAB的大小。默认是打开状态；<br>
 `-XX:TLABRefillWasteFraction`选项是TLAB的refill_waste，默认值为64，即表示使用约为1/64空间大小作为refill_waste；<br>
 `-XX:TLABSize`选项为指定TLAB的大小，这个选项一般不需要设置，会自动根据`-XX:TLABWasteTargetPercent`来赋予初始值，并且会自动调整TLAB的大小；<br>
 `-XX:MinTLABSize`选项是指最小TLAB的值，默认为2048；<br>
-
 
 ### 二、垃圾回收
 
