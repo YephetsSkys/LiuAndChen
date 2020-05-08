@@ -546,6 +546,26 @@ G1 GC通过初始化一个并行标记周期循环唉帮助标记对象的根节
 -XX:InitiatingHeapOccupancyPercent：当整个堆使用率达到多少触发并发标记周期的执行，默认值45。<br>
 -XX:G1HeapRegionSize：每个Region的大小，最小1M，最大32M<br>
 
+#### 18.Metaspace相关的知识
+
+>- 1.我们在指定`-XX:MetaspaceSize`的时候，虚拟机在启动的时候不会默认就申请`-XX:MetaspaceSize`指定的内存，一般初始容量是21807104（约20.8m）。
+>- 2.Metaspace由于使用不断扩容到-XX:MetaspaceSize参数指定的量，就会发生FGC；且之后每次Metaspace扩容都会发生FGC；
+>- 3.如果Old区配置CMS垃圾回收，那么第2点的FGC也会使用CMS算法进行回收；
+>- 4.Meta区容量范围为[20.8m, MaxMetaspaceSize)；
+>- 5.如果MaxMetaspaceSize设置太小，可能会导致频繁FGC，甚至OOM；
+>- 6.建议`-XX:MetaspaceSize`和`-XX:MaxMetaspaceSize`设置一样大。至于设置多大建议稳定运行一段时间后通过`jstat -gc pid`确认且这个值大一些，对于大部分项目256m即可；
+>- 7.`-XX:CompressedClassSpaceSize`参数在JVM启动的时候会分配内存供Metaspace来使用，默认1G，分配会跟Heap紧挨着，这块内存专门来存类元数据的Klass部分；如果不开启`-XX:UseCompressedClassPointers`，则没有这一块内存。这样就会Klass部分和非Klass(Method等对象)会共享Metaspace空间；
+>- 8.`-XX:InitialBootClassLoaderMetaspaceSize`主要指定BootClassLoader(默认JVM启动类加载器)的存储。非Klass部分数据第一个Metachunk大小在64位默认4M，32位下默认2200K，而存储Klass部分的第一个Metachunk的大小默认是384K。
+>- 9.每个类加载器都会有Metachunk来关联并存储类相关的信息，如果类加载器很多的时候，最大的问题就是碎片化的问题。如很多的类加载器，每个里面只加载了1个类，但是Metachunk大小会是一定的，这就造成了空间浪费，并且Metaspace中的类回收还不能做空间整理。
+>- 10.jstat我们看到Metaspace空间经常是占比90%，有时候不是说Metaspace空间不足，是因为已用空间/Committed的占比，真正的可用的空间应该是(Reserved-已用空间)。
+
+#### 19.线程大小相关的知识
+
+>- 1.`-XX:ThreadStackSize`和`-Xss`两个是一个意思，都是设置Java线程栈大小，但是`-Xss`需要添加上单位信息，而`-XX:ThreadStackSize`默认单位是KB，可以不需要添加；
+>- 2.`-XX:ThreadStackSize`在64位虚拟机中默认为1M，32位虚拟机为512K，需要4K对齐；
+>- 3.`-XX:CompilerThreadStackSize`设置编译线程栈大小，64位默认大小为4M，32位默认大小为2M，比如C2 CompilerThread等线程；
+>- 4.
+
 ### 三、JVM故障诊断与性能优化
 
 #### 1.Netty项目报java.lang.OutOfMemoryError:Direct buffer memory错误。
