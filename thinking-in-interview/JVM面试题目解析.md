@@ -564,7 +564,24 @@ G1 GC通过初始化一个并行标记周期循环唉帮助标记对象的根节
 >- 1.`-XX:ThreadStackSize`和`-Xss`两个是一个意思，都是设置Java线程栈大小，但是`-Xss`需要添加上单位信息，而`-XX:ThreadStackSize`默认单位是KB，可以不需要添加；
 >- 2.`-XX:ThreadStackSize`在64位虚拟机中默认为1M，32位虚拟机为512K，需要4K对齐；
 >- 3.`-XX:CompilerThreadStackSize`设置编译线程栈大小，64位默认大小为4M，32位默认大小为2M，比如C2 CompilerThread等线程；
->- 4.
+
+#### 20.CodeCache Size相关参数
+
+>- 1.`-XX:InitialCodeCacheSize`是CodeCache初始化的时候的大小，但是随着CodeCache的增长不会降下来，但是CodeCache里的block是可以复用的；
+>- 2.`-XX:ReservedCodeCacheSize`是设置CodeCache最大值的内存值，默认值是48M，如果开启分层编译则是240M(默认JDK8是开启分层编译)，同时`-XX:ReservedCodeCacheSize`不能超过2G；
+>- 3.`-XX:CodeCacheMinimumFreeSpace`表示当CodeCache的可用大小不足这个值的时候，就会进行Code Cache Full的处理（处理期间整个jit会暂停，并且有且仅有一次打印code_cache_full到控制台，进行空间回收等操作）；
+
+#### 21.堆外内存相关参数
+
+>- 1.`-XX:MaxDirectMemorySize`设置堆外内存的大小，默认值是Xms-S0大小。
+
+在我们查看GC日志的时候，经常会到到Full GC，堆空间又没满，并且查看自己代码却没有主动调用`System.gc()`的地方，这个时候往往就是堆外内存满了造成的。
+
+Java中在申请好的堆外内存是通过`DirectByteBuffer`类来关联，本身`DirectByteBuffer`这个对象占用的JVM空间很小，但是可能会关联一个非常大的堆外空间。如果JVM长时间不进行GC来回收掉`DirectByteBuffer`对象，则堆外空间将一直无法得到释放。所以在每次进行申请的时候，判断堆外空间不足的时候，会主动调用`System.gc()`来执行空间释放。
+
+`DirectByteBuffer`对象如果从native层面创建是可以绕过堆外内存大小的检查，这个是非常危险的。
+
+建议不要关闭`System.gc()`的执行，不要配置参数`-XX:+DisableExplicitGC`此参数。
 
 ### 三、JVM故障诊断与性能优化
 
