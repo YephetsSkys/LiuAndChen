@@ -595,7 +595,31 @@ Java中在申请好的堆外内存是通过`DirectByteBuffer`类来关联，本�
 
 建议不要关闭`System.gc()`的执行，不要配置参数`-XX:+DisableExplicitGC`此参数。
 
-### 三、JVM故障诊断与性能优化
+### 三、JVM性能监控、故障处理工具介绍
+
+#### 1.jstat:虚拟机统计信息监视工具
+
+```
+jstat [ option vmid [interval[s|ms] [ccount]] ]
+```
+
+| 选项 | 作用 |
+| --- | --- |
+| -class | 监视类加载、卸载数量、总空间以及类装载所耗费的时间 |
+| -gc | 监视Java堆状况，包括Eden区、2个Survivor区、老年代、永久代等的容量，已用空间，垃圾收集时间合计等信息 |
+| -gccapacity | 监视内容与-gc基本相同，但输出主要关注Java堆各个区域使用到的最大、最小空间 |
+| -gcutil | 监视内容与-gc基本相同，但输出主要关注已使用空间占总空间的百分比 |
+| -gccause | 与-gcutil功能一样，但是会额外输出导致上一次垃圾收集产生的原因 |
+| -gcnew | 监视新生代垃圾收集状况 |
+| -gcnewcapacity | 监视内容与-gcnew基本相同，输出主要关注使用到的最大、最小空间 |
+| -gcold | 监视老年代垃圾收集状况 |
+| -gcoldcapacity | 监视内容与-gcold基本相同，输出主要关注使用到的最大、最小空间 |
+| -gcpermcapacity | 输出永久代使用到的最大、最小空间 |
+| -compiler | 输出即时编译器编译过的方法、耗时等信息 |
+| -printcompilation | 输出已经被即时编译的方法 |
+
+
+### 四、JVM故障诊断与性能优化
 
 #### 1.Netty项目报java.lang.OutOfMemoryError:Direct buffer memory错误。
 
