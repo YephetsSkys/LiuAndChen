@@ -28,7 +28,7 @@ Java内存模型规定了所有的变量都存储在主内存中，每条线程�
 
 作用于主内存的操作有：lock、unlock、read、write。
 
-作用于工作内存的操作有：load、user、assign、store。
+作用于工作内存的操作有：load、use、assign、store。
 
 对于这8中操作，虚拟机也规定了一系列规则，在执行这8中操作的时候必须遵循如下的规则：
 >- ***不允许read和load、store和write操作之一单独出现***，也就是不允许从主内存读取了变量的值但是工作内存不接收的情况，或者不允许从工作内存将变量的值回写到主内存但是主内存不接收的情况；
@@ -344,7 +344,58 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 | 对齐填充 | 实例数据 |
 | | 对齐填充 |
 
-#### 22.
+#### 22.Class对象默认情况下是存在Heap里面还是Perm中（JDK8一律分配在Heap中）？
+
+Class对象默认分配在Heap中，JDK8之前如果我们设置了`-XX:+UnlockDiagnosticVMOptions`，`-XX:+JavaObjectsInPerm`这两个参数，那将分配在Perm里。其实也没啥用，主要是为了分析查找问题等。
+
+#### 23.volatile的实现原理？
+
+1.Java源码
+
+Java源码很简单，只需要在字段修饰中添加volatile就可以了。
+
+2.byteCode字节码
+
+字节码层面也非常的简答， 在access_flag中会标记为0x0040即可。
+
+3.JVM虚拟机规范
+
+JVM虚拟机规范要求在对volatile字段进行操作的时候，需要添加内存屏障。在对volatile变量进行写的时候，前面加StoreStore屏障，后面加StoreLoad屏障。在对volatile变量读的时候，前面加LoadLoad屏障，后面加LoadStore屏障。
+
+4.CPU级别
+
+MESI(多CPU缓存的一致性和可见性，其实就是缓存过期策略通知)或者总线锁来实现[JVM底层实际是使用总线锁来实现的，因为大部分CPU都有Lock指令]。hsdis可以看Java的反汇编指令。
+
+通过一些测试代码，再加上`java -XX:+UnlockDiagnosticVMOptions -XX:+PrintAssembly`打印JVM编译的汇编码。可以看到volatile和synchronized等都是使用底层CPU的Lock指令。
+
+#### 24.你知道Java虚拟机的TLAB吗？跟我讲一讲？
+
+TLAB全程叫Thread Local Allocation Buffer，也即线程本地分配缓冲。这部分Buffer是从堆中划分出来的，但是是本地线程独享的。可以被其他线程读取，但是不能被其他线程写入。
+
+TLAB主要是为了解决多线程分配内存的时候，为了解决这个并发问题，对象的内存分配过程就必须进行同步控制。但是我们都知道，无论是使用哪种同步方案（实际上虚拟机使用的可能是CAS），都会影响内存的分配效率。
+
+TLAB是虚拟机在堆内存的eden划分出来的一块专用空间，是线程专属的。在虚拟机的TLAB功能启动的情况下，在线程初始化时，虚拟机会为每个线程分配一块TLAB空间，只给当前线程使用，这样每个线程都单独拥有一个空间，如果需要分配内存，就在自己的空间上分配，这样就不存在竞争的情况，可以大大提升分配效率。
+
+***TLAB的问题：***
+
+如一个线程的TLAB空间有100KB，其中已经使用了80KB，当需要再分配一个30KB的对象时，就无法直接在TLAB中分配，遇到这种情况时，有两种处理方案：
+>- 如果一个对象需要的空间大小超过TLAB中剩余的空间大小，则直接在堆内存中对该对象进行内存分配。
+>- 如果一个对象需要的空间大小超过TLAB中剩余的空间大小，则废弃当前TLAB，重新申请TLAB空间再次进行内存分配。
+
+如果采用方案1，那么就可能存在着一种极端情况，就是TLAB只剩下1KB，就会导致后续需要分配的大多数对象都需要在堆内存直接分配。<br>
+如果采用方案2，也有可能存在频繁废弃TLAB，频繁申请TLAB的情况，而我们知道，虽然在TLAB上分配内存是线程独享的，但是TLAB内存自己从堆中划分出来的过程确实可能存在冲突的，所以，TLAB的分配过程其实也是需要并发控制的。而频繁的TLAB分配就失去了使用TLAB的意义。
+
+为了解决这两个方案存在的问题，虚拟机定义了一个`refill_waste`的值，这个值可以翻译为“最大浪费空间”。<br>
+当请求分配的内存大于`refill_waste`的时候，会选择在堆内存中分配。若小于`refill_waste`值，则会废弃当前TLAB，重新创建TLAB进行对象内存分配。<br>
+前面的例子中，TLAB总空间100KB，使用了80KB，剩余20KB，如果设置的`refill_waste`的值为25KB，那么如果新对象的内存大于25KB，则直接堆内存分配，如果小于25KB，则会废弃掉之前的那个TLAB，重新分配一个TLAB空间，给新对象分配内存。
+
+***TLAB相关的参数：***<br>
+`-XX:+UseTLAB`选择表示是否开启TLAB，默认是开启；<br>
+`-XX:TLABWasteTargetPercent`选项为设置TLAB空间所占用Eden空间的百分比大小。默认是eden区的1%；<br>
+`-XX:+ResizeTLAB`选项是指TLAB的空间会在运行时不断调整，使系统达到最佳的运行状态。如果需要禁用自动调整TLAB的大小，可以使用`-XX:-ResizeTLAB`来禁用，并且使用`-XX:TLABSize`来手工指定TLAB的大小。默认是打开状态；<br>
+`-XX:TLABRefillWasteFraction`选项是TLAB的refill_waste，默认值为64，即表示使用约为1/64空间大小作为refill_waste；<br>
+`-XX:TLABSize`选项为指定TLAB的大小，这个选项一般不需要设置，会自动根据`-XX:TLABWasteTargetPercent`来赋予初始值，并且会自动调整TLAB的大小；<br>
+`-XX:MinTLABSize`选项是指最小TLAB的值，默认为2048；<br>
 
 ### 二、垃圾回收
 
@@ -414,7 +465,17 @@ CMS收集器的工作过程比其他收集器（除了G1）略显复杂。主要
 
 并发重置：重新调整堆的大小，并为下一次GC做好数据结构支持，比如重置卡表的标位。
 
-#### 8.CMS收集器中的卡表(Card Table)的作用？
+#### 8.GC Roots对象包含哪里？
+
+>- 1.在虚拟机栈(栈帧中的本地变量表)中引用的对象，譬如各个线程被调用的方法堆栈中使用到的参数、局部变量、临时变量等；
+>- 2.在方法区中类静态属性引用的对象，譬如Java类的引用类型静态变量；
+>- 3.在方法区中常量引用的对象，譬如字符串常量池里的引用；
+>- 4.在本地方法栈中JNI引用的对象；
+>- 5.Java虚拟机内部的引用，如基本类型对应的Class对象，一些常驻的异常对象等，还有系统类加载器；
+>- 6.所有被同步锁(synchronized关键字)持有的对象；
+>- 7.反应Java虚拟机内部情况的JMXBean、JVMTI中注册的回调、本地代码缓存等；
+
+#### 9.CMS收集器中的卡表(Card Table)的作用？
 
 基于卡表（Card Table）的设计，通常将堆空间划分为一系列2次幂大小的卡页（Card Page）。卡表（Card Table），用于标记卡页的状态，每个卡表项对应一个卡页。HotSpot JVM的卡页（Card Page）大小为512字节，卡表（Card Table）被实现为一个简单的字节数组，即卡表的每个标记项为1个字节。当对一个对象引用进行写操作时（对象引用改变），写屏障逻辑将会标记对象所在的卡页为dirty。
 
@@ -425,16 +486,16 @@ CMS在并发标记阶段，应用线程和GC线程是并发执行的，因此可
 
 对于这些对象，需要重新标记以防止被遗漏。为了提高重新标记的效率，并发标记阶段会把这些发生变化的对象所在的Card标识为Dirty，这样后续阶段就只需要扫描这些Dirty Card的对象，从而避免扫描整个老年代。
 
-#### 9.CMS中minor gc和major gc是顺序发生的吗？
+#### 10.CMS中minor gc和major gc是顺序发生的吗？
 
 不是的，可以交叉发生，即在并发周期执行过程中，是可以发生Minor gc的，这个找个gc日志就可以观察到。
 
-#### 10.CMS的并发收集周期何时触发？
+#### 11.CMS的并发收集周期何时触发？
 
 >- 阈值检查机制：老年代的使用空间达到某个阈值，JVM的默认值是92%（jdk1.5之前是68%，jdk1.6之后是92%），或者可以通过`-XX:+CMSInitiatingOccupancyFraction`和`-XX:+UseCMSInitiatingOccupancyOnly`两个参数来设置；这个参数的设置需要看应用场景，设置得太小，会导致CMS频繁发生，设置得太大，会导致过多的并发模式失败。
 >- 动态检查机制：JVM会根据最近的回收历史，估算下一次老年代被耗尽的时间，快到这个时间的时候就启动一个并发周期。设置`-XX:+UseCMSInitiatingOccupancyOnly`这个参数可以将这个特性关闭。
 
-#### 11.concurrent mode failure和promotion failed触发的Full GC有啥不同？
+#### 12.concurrent mode failure和promotion failed触发的Full GC有啥不同？
 
 concurrent mode failure触发的是foreground模式，会暂停整个应用，会将一些并行的阶段省掉做一次老年代收集，行为跟Serial-Old的一样，至于在这个过程中是否需要压缩，则需要看三个条件：
 >- 我们设置了`-XX:+UseCMSCompactAtFullCollection`和`-XX:CMSFullGCsBeforeCompaction=N`，前者设置为true，后者默认是0，前者表示是在Full GC的时候执行压缩，后者表示是每隔多少个进行压缩，默认是0的话就是每次Full GC都压缩；
@@ -443,17 +504,17 @@ concurrent mode failure触发的是foreground模式，会暂停整个应用，�
 
 promotion failed触发的是我们常说的的Full GC，对年轻代和老年代都会回收，并进行整理。
 
-#### 12.promotion failed和concurrent mode failure的触发原因有啥不同？
+#### 13.promotion failed和concurrent mode failure的触发原因有啥不同？
 
 >- promotion failed是说，担保机制确定老年代是否有足够的空间容纳新来的对象，如果担保机制说有，但是真正分配的时候发现由于碎片导致找不到连续的空间而失败；
 >- concurrent mode failure是指并发周期还没执行完，用户线程就来请求比预留空间更大的空间了，即后台线程的收集没有赶上应用线程的分配速度。
 
-#### 13.什么情况下才选择使用CMS收集器呢？
+#### 14.什么情况下才选择使用CMS收集器呢？
 
 >- 堆太小，如果不是对延迟有特别高的需求，不建议使用CMS，主要是由于CMS的几个缺点导致的：（1）并发周期的触发比例不好设置；（2）抢占CPU时间；（3）担保判断导致YGC变慢；（4）碎片问题。
 >- 除了看吞吐量和延时，还需要看具体的应用，比方说ES，Lucene和G1是不兼容的，因此默认的收集器就是CMS。
 
-#### 14.请讲一讲G1的垃圾收集过程是怎样的？
+#### 15.请讲一讲G1的垃圾收集过程是怎样的？
 
 G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混合收集、Full GC。
 
@@ -465,7 +526,7 @@ G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混
 
 ***Full GC***如果在年轻代区间或者老年代区间执行拷贝存活对象操作的时候，找不到一个空闲的区间，就会在GC日志中看到诸如“to-space exhausted”这样的错误日志，则G1 GC会尝试去扩展可用的Java堆内存大小。如果扩展失败，G1 GC会触发它的失败保护机制并且启动单线程的Full GC动作。这个阶段，单线程会针对整个堆内存里的所有区间进行标记、清除、压缩等工作。
 
-#### 15.请讲一讲G1的并发标记周期的过程？
+#### 16.请讲一讲G1的并发标记周期的过程？
 
 >- 初始标记，这个阶段是独占式的，它会停止所有的Java线程，然后开始标记根节点可及的所有对象。这个阶段可以和年轻代回收同时执行，这样的设计方式主要是为了加快独占阶段的执行速度。
 >- 根区间扫描，这个阶段是并发的，可以和Java应用程序线程同时运行。在年轻代回收的初始标记阶段拷贝到幸存者区间的对象需要被扫描并被当作标记根元素。任何从幸存者区间过来的引用都会被标记，基于这个原理，幸存者区间也被称为根区间。根区间扫描阶段必须在下一个垃圾回收暂停之前完成，这是因为所有从幸存者区间来的引用需要在整个堆区间扫描之前完成标记工作。
@@ -473,7 +534,7 @@ G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混
 >- 最终标记阶段是整个标记阶段的最后一环。这个阶段是一个独占式阶段，在整个独占式过程中，G1 GC完全处理 遗留的STAB日志缓存、更新。这个阶段主要的目标是统计存活对象的数量，同时也对引用对象进行处理。如果你的应用程序使用了大量的引用对象，那么这个阶段呃耗时会有所增加。
 >- 清除阶段，在统计期间，G1 GC会识别完全空的区域和可供进行混合垃圾回收的区域。清理阶段在将空白区域重置并添加到空闲列表时为部分并发。完全空的Region不会被加到CSet中，都在这个阶段直接回收了。此阶段与应用程序是并发执行的。
 
-#### 16.请讲一讲G1的混合回收？
+#### 17.请讲一讲G1的混合回收？
 
 G1 GC通过初始化一个并行标记周期循环唉帮助标记对象的根节点，最终确认所有的存活对象和每一个区间的存活对象比例。当老年代的占有率达到了`-XX:InitiatingHeapOccupancyPercent=45`，一个并行标记循环被初始化并启动了。在最后阶段，G1计算每个老年代区间的存活对象数量，并且在清理阶段会对每个老年代区间进行打分。这个阶段完成之后，G1开始一次混合回收。
 
@@ -487,7 +548,7 @@ G1 GC通过初始化一个并行标记周期循环唉帮助标记对象的根节
 
 `-XX:G1HeapWastePercent=5`，这个选项对于控制一次混合回收循环回收的老年代区间数量有很大的影响作用。对于每一次混合回收暂停，在每次YGC之后和再次发生Mixed GC之前，会检查垃圾占比是否达到此参数，只有达到了，下次才会发生Mixed GC。
 
-#### 17.请跟我讲讲跟G1收集器相关的JVM参数有哪些？
+#### 18.请跟我讲讲跟G1收集器相关的JVM参数有哪些？
 
 -XX:+UseG1GC：打开G1收集器开关<br>
 -XX:MaxGCPauseMillis：指定最大停顿时间<br>
@@ -495,7 +556,70 @@ G1 GC通过初始化一个并行标记周期循环唉帮助标记对象的根节
 -XX:InitiatingHeapOccupancyPercent：当整个堆使用率达到多少触发并发标记周期的执行，默认值45。<br>
 -XX:G1HeapRegionSize：每个Region的大小，最小1M，最大32M<br>
 
-### 三、JVM故障诊断与性能优化
+#### 19.Metaspace相关的知识
+
+>- 1.我们在指定`-XX:MetaspaceSize`的时候，虚拟机在启动的时候不会默认就申请`-XX:MetaspaceSize`指定的内存，一般初始容量是21807104（约20.8m）。
+>- 2.Metaspace由于使用不断扩容到-XX:MetaspaceSize参数指定的量，就会发生FGC；且之后每次Metaspace扩容都会发生FGC；
+>- 3.如果Old区配置CMS垃圾回收，那么第2点的FGC也会使用CMS算法进行回收；
+>- 4.Meta区容量范围为[20.8m, MaxMetaspaceSize)；
+>- 5.如果MaxMetaspaceSize设置太小，可能会导致频繁FGC，甚至OOM；
+>- 6.建议`-XX:MetaspaceSize`和`-XX:MaxMetaspaceSize`设置一样大。至于设置多大建议稳定运行一段时间后通过`jstat -gc pid`确认且这个值大一些，对于大部分项目256m即可；
+>- 7.`-XX:CompressedClassSpaceSize`参数在JVM启动的时候会分配内存供Metaspace来使用，默认1G，分配会跟Heap紧挨着，这块内存专门来存类元数据的Klass部分；如果不开启`-XX:UseCompressedClassPointers`，则没有这一块内存。这样就会Klass部分和非Klass(Method等对象)会共享Metaspace空间；
+>- 8.`-XX:InitialBootClassLoaderMetaspaceSize`主要指定BootClassLoader(默认JVM启动类加载器)的存储。非Klass部分数据第一个Metachunk大小在64位默认4M，32位下默认2200K，而存储Klass部分的第一个Metachunk的大小默认是384K。
+>- 9.每个类加载器都会有Metachunk来关联并存储类相关的信息，如果类加载器很多的时候，最大的问题就是碎片化的问题。如很多的类加载器，每个里面只加载了1个类，但是Metachunk大小会是一定的，这就造成了空间浪费，并且Metaspace中的类回收还不能做空间整理。
+>- 10.jstat我们看到Metaspace空间经常是占比90%，有时候不是说Metaspace空间不足，是因为已用空间/Committed的占比，真正的可用的空间应该是(Reserved-已用空间)。
+>- 11.`-XX:MinMetaspaceFreeRatio`当进行过Metaspace GC之后，会计算当前Metaspace的空闲空间比，如果空闲比小于这个参数，那么虚拟机将增长Metaspace的大小。在本机该参数的默认值为40，也就是40%。设置该参数可以控制Metaspace的增长的速度，太小的值会导致Metaspace增长的缓慢，Metaspace的使用逐渐趋于饱和，可能会影响之后类的加载。而太大的值会导致Metaspace增长的过快，浪费内存；
+>- 12.`-XX:MaxMetaspaceFreeRatio`当进行过Metaspace GC之后， 会计算当前Metaspace的空闲空间比，如果空闲比大于这个参数，那么虚拟机会释放Metaspace的部分空间。在本机该参数的默认值为70，也就是70%；
+
+#### 20.线程大小相关的知识
+
+>- 1.`-XX:ThreadStackSize`和`-Xss`两个是一个意思，都是设置Java线程栈大小，但是`-Xss`需要添加上单位信息，而`-XX:ThreadStackSize`默认单位是KB，可以不需要添加；
+>- 2.`-XX:ThreadStackSize`在64位虚拟机中默认为1M，32位虚拟机为512K，需要4K对齐；
+>- 3.`-XX:CompilerThreadStackSize`设置编译线程栈大小，64位默认大小为4M，32位默认大小为2M，比如C2 CompilerThread等线程；
+
+#### 21.CodeCache Size相关参数
+
+>- 1.`-XX:InitialCodeCacheSize`是CodeCache初始化的时候的大小，但是随着CodeCache的增长不会降下来，但是CodeCache里的block是可以复用的；
+>- 2.`-XX:ReservedCodeCacheSize`是设置CodeCache最大值的内存值，默认值是48M，如果开启分层编译则是240M(默认JDK8是开启分层编译)，同时`-XX:ReservedCodeCacheSize`不能超过2G；
+>- 3.`-XX:CodeCacheMinimumFreeSpace`表示当CodeCache的可用大小不足这个值的时候，就会进行Code Cache Full的处理（处理期间整个jit会暂停，并且有且仅有一次打印code_cache_full到控制台，进行空间回收等操作）；
+
+#### 22.堆外内存相关参数
+
+>- 1.`-XX:MaxDirectMemorySize`设置堆外内存的大小，默认值是Xms-S0大小。
+
+在我们查看GC日志的时候，经常会到到Full GC，堆空间又没满，并且查看自己代码却没有主动调用`System.gc()`的地方，这个时候往往就是堆外内存满了造成的。
+
+Java中在申请好的堆外内存是通过`DirectByteBuffer`类来关联，本身`DirectByteBuffer`这个对象占用的JVM空间很小，但是可能会关联一个非常大的堆外空间。如果JVM长时间不进行GC来回收掉`DirectByteBuffer`对象，则堆外空间将一直无法得到释放。所以在每次进行申请的时候，判断堆外空间不足的时候，会主动调用`System.gc()`来执行空间释放。
+
+`DirectByteBuffer`对象如果从native层面创建是可以绕过堆外内存大小的检查，这个是非常危险的。
+
+建议不要关闭`System.gc()`的执行，不要配置参数`-XX:+DisableExplicitGC`此参数。
+
+### 三、JVM性能监控、故障处理工具介绍
+
+#### 1.jstat:虚拟机统计信息监视工具
+
+```
+jstat [ option vmid [interval[s|ms] [ccount]] ]
+```
+
+| 选项 | 作用 |
+| --- | --- |
+| -class | 监视类加载、卸载数量、总空间以及类装载所耗费的时间 |
+| -gc | 监视Java堆状况，包括Eden区、2个Survivor区、老年代、永久代等的容量，已用空间，垃圾收集时间合计等信息 |
+| -gccapacity | 监视内容与-gc基本相同，但输出主要关注Java堆各个区域使用到的最大、最小空间 |
+| -gcutil | 监视内容与-gc基本相同，但输出主要关注已使用空间占总空间的百分比 |
+| -gccause | 与-gcutil功能一样，但是会额外输出导致上一次垃圾收集产生的原因 |
+| -gcnew | 监视新生代垃圾收集状况 |
+| -gcnewcapacity | 监视内容与-gcnew基本相同，输出主要关注使用到的最大、最小空间 |
+| -gcold | 监视老年代垃圾收集状况 |
+| -gcoldcapacity | 监视内容与-gcold基本相同，输出主要关注使用到的最大、最小空间 |
+| -gcpermcapacity | 输出永久代使用到的最大、最小空间 |
+| -compiler | 输出即时编译器编译过的方法、耗时等信息 |
+| -printcompilation | 输出已经被即时编译的方法 |
+
+
+### 四、JVM故障诊断与性能优化
 
 #### 1.Netty项目报java.lang.OutOfMemoryError:Direct buffer memory错误。
 
