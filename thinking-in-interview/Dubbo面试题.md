@@ -1,6 +1,6 @@
 ### 一、Dubbo基础知识
 
-#### 2.Dubbo中有哪些角色？
+#### 1.Dubbo中有哪些角色？
 
 ***Registry***
 
@@ -18,13 +18,29 @@
 
 ***Container***
 
-ubbo技术的服务端(Provider), 在启动执行的时候, 必须依赖容器才能正常启动。默认依赖的就是spring容器. 且Dubbo技术不能脱离 Spring框架。
+Dubbo技术的服务端(Provider), 在启动执行的时候, 必须依赖容器才能正常启动。默认依赖的就是spring容器. 且Dubbo技术不能脱离 Spring框架。
 
 ***Monitor***
 
 监控中心是Dubbo提供的一个jar工程。主要功能是监控服务端(Provider)和消费端(Consumer)的使用数据的. 如: 服务端是什么,有多少接口,多少方法, 调用次数, 压力信息等. 客户端有多少, 调用过哪些服务端, 调用了多少次等。
 
-#### 2.Dubbo支持哪几种协议？
+#### 2.介绍一下Dubbo的框架设计分层
+
+Dubbo的框架设计一共划分了10层，各层均为单向依赖，每一层都可以剥离上层被复用，其中，Service和Config层为API，其他各层均为SPI。
+
+接下来分别介绍在框架分层架构中各个层次的设计要点：
+- ***服务接口层(Service)：***该层是与实际业务逻辑相关的，根据服务提供者和服务消费者的业务设计对应的接口和实现。
+- ***配置层(Config)：***对外的配置接口，以ServiceConfig和ReferenceConfig为中心，可以直接创建(new)一个配置类对象，也可以通过Spring解析配置生成配置类对象。
+- ***服务代理层(Proxy)：***服务接口的透明代理，生成服务的客户端Stub和服务器端Skeleton，以ServiceProxy为中心，扩展接口为ProxyFactory。
+- ***服务注册层(Registry)：***封装服务地址的注册与发现，以服务URL为中心，扩展接口为RegistryFactory、Registry和RegistryService。可能没有服务注册中心，此时服务提供者直接暴露服务。
+- ***集群层(Cluster)：***封装多个提供者的路由及负载均衡，并桥接注册中心，以Invoker为中心，扩展接口为Cluster、Directory、Router和LoadBalance。将多个服务提供者组合为一个服务提供者，实现对服务消费者透明，只需与一个服务提供者进行交互。
+- ***监控层(Monitor)：***RPC调用的次数和调用时间的监控，以Statistice为中心，扩展接口为MonitorFactory、Monitor和MonitorService。
+- ***远程调用层(Protocol)：***封装RPC调用，以Invocation和Result为中心，扩展接口为Protocol、Invoker和Exporter。Protocol是服务域，是Dubbo的核心模型，其他模型都向它靠拢或转换成它，它代表一个可执行体，可向它发起invoke调用，它有可能是一个本地的实现，也可能是一个远程的实现，也可能是一个集群实现。
+- ***信息交换层(Exchange)：***封装请求相应模式，同步转异步，以Request和Response为中心，扩展接口为Exchange、ExchangeChannel、ExchangeClient和ExchangeServer。
+- ***网络传输层(Transport)：***抽象mina和netty为统一接口，以Message为中心，扩展接口为Channel、Transporter、Client、Server和Codec。
+- ***数据序列化层(Serialize)：***可服用的一些工具，扩展接口为Serialization、ObjectInput、ObjectOutput和ThreadPool。
+
+#### 3.Dubbo支持哪几种协议？
 
 >- dubbo 协议 (默认)
 >- rmi 协议
@@ -178,7 +194,7 @@ Thrift是Facebook捐给Apache的一个RPC框架，当前 dubbo 支持的 thrift 
 
 可以通过脚本或监控中心手工填写表单注册redis服务的地址。
 
-#### 3.Dubbo有几种集群容错模式？
+#### 4.Dubbo有几种集群容错模式？
 
 目前Dubbo主要支持6种模式：Failover、Failfast、Failsafe、Failback、Forking和Broadcast。
 
@@ -224,7 +240,7 @@ Thrift是Facebook捐给Apache的一个RPC框架，当前 dubbo 支持的 thrift 
 
 配置值为broadcast。广播低矮用所有提供者，逐个调用，任意一台报错则报错。通常用于通知所有提供者更新缓存或日志等本地资源信息。
 
-#### 4.Dubbo的负载均衡策略
+#### 5.Dubbo的负载均衡策略
 
 Dubbo框架内置了负载均衡的功能及扩展接口，我们可以透明地扩展一个服务或服务集群，根据需要能非常容易地增加或移除节点，提供服务的可伸缩性。Dubbo内置了4种负载均衡策略：***随机(Random)***、***轮询(RoundRobin)***、***最少活跃调用数(LeastActive)***、***一致性Hash(ConsistentHash)***。
 
@@ -244,7 +260,7 @@ Dubbo框架内置了负载均衡的功能及扩展接口，我们可以透明地
 
 一致性Hash，相同参数的请求总是发到同一提供者。当某一台提供者挂时，原本发往该提供者的请求，基于虚拟节点，平摊到其它提供者，不会引起剧烈变动。缺省只对第一个参数Hash，如果要修改，请配置。
 
-#### 5.Dubbo支持的注册中心有哪些？
+#### 6.Dubbo支持的注册中心有哪些？
 
 ***1) Zookeeper***
 
@@ -266,7 +282,7 @@ Dubbo框架内置了负载均衡的功能及扩展接口，我们可以透明地
 - 优点: 标准RPC服务.没有兼容问题。
 - 缺点: 不支持集群。
 
-#### 6.Dubbo中ZK作为注册中心，如果注册中心集群挂掉了，发布者和订阅者之间还能通信吗？
+#### 7.Dubbo中ZK作为注册中心，如果注册中心集群挂掉了，发布者和订阅者之间还能通信吗？
 
 可以的，启动Dubbo时，消费者会从zk拉取注册的生产者的地址接口等数据，缓存在本地。每次调用时，按照本地存储的地址进行调用。
 
@@ -275,6 +291,184 @@ Dubbo框架内置了负载均衡的功能及扩展接口，我们可以透明地
 - 服务提供者无状态，任一台 宕机后，不影响使用。
 - 服务提供者全部宕机，服务消费者会无法使用，并无限次重连等待服务者恢复。
 
+#### 8.服务暴露的一些特殊配置
+
+如果服务需要预热的时间，比如初始化缓存、等待相关资源就位等，就可以使用delay属性进行服务延迟暴露：
+```
+<!-- 延迟5秒暴露服务 -->
+<dubbo:service delay="5000" />
+<!-- 或者设置为-1，表示延迟到Spring初始化完成后再暴露服务 -->
+<dubbo:service delay="-1" />
+```
+
+如果一个服务的并发量过大，超出了服务器的承载能力，那么可以使用`executes`属性控制并发。
+```
+<!-- 服务端限制接口的每个方法，并发不能超过10个 -->
+<dubbo:service interface="xxx.IHelloService" executes="10" />
+<!-- 服务端限制指定方法的并发 -->
+<dubbo:service interface="xxx.IHelloService">
+	<dubbo:method name="sayHello" executes="10" />
+</dubbo:service>
+<!-- 客户端同样也可以实现并发控制(可以在客户端指定Service级别，接口级别或者方法级别) -->
+<dubbo:reference interface="xxx.IHelloService" actives="10" />
+```
+
+未了保障服务的稳定性，除了限制并发线程数外，还可以限制服务端的连接数：
+```
+<!-- 限制服务端的连接数不能超过10个 -->
+<dubbo:provider protocol="dubbo" accepts="10" />
+<!-- 或者 -->
+<dubbo:protocol name="dubbo" accepts="10" />
+<!-- 同样，也可以限制客户端的使用连接数 -->
+<dubbo:reference interface="xxx.IHelloService" connections="10" />
+<!-- 或者 -->
+<dubbo:service interface="xxx.IHelloService" connections="10" />
+<!-- 如果service和reference都配置了connections，则reference优先，由于服务提供者了解自身的承载能力，所以推荐让服务提供者控制连接数 -->
+```
+
+除了常用的控制并发、控制连接数、服务隔离也是非常重要的一项措施。服务隔离是为了在系统发生故障时限定传播范围和影响范围，从而保证只有出问题的服务不可用，其他服务还是正常的。隔离一般有线程隔离、进程隔离、读写隔离、集群隔离和机房隔离，而dubbo还提供了分组隔离，即使用group属性分组：
+```
+<!-- 将服务提供者分组 -->
+<dubbo:service group="login_wx" interface="com.bill.login" />
+<dubbo:service group="login_fb" interface="com.bill.login" />
+<!-- 或者将服务消费者分组 -->
+<dubbo:reference id="wxLogin" group="login_wx" interface="com.bill.login" />
+<dubbo:reference id="fbLogin" group="login_fb" interface="com.bill.login" />
+```
+
+#### 9.服务的异步调用
+
+默认情况下消费者使用同步方式进行远程调用，如果想使用异步方式，则可以设置`async`属性为true，并使用Feture获取返回值：
+```
+<!-- 在配置中设置异步调用方法 -->
+<dubbo:reference id="helloService" interface="xxx.IHelloService">
+	<dubbo:method name="sayHello" async="true" />
+</dubbo:reference>
+```
+----
+```java
+//如何使用
+IHelloService helloService = (IHelloService)context.getBean("helloService");
+//此调用会立即返回null
+helloService.sayHello("Hello World");
+//拿到调用的Future引用，在结果返回后，会被通知和设置到此Future中
+Future<String> helloFuture = RpcContext.getContext().getFuture();
+
+//如果已返回，则直接拿到返回值，否则线程等待，直到str值返回后，线程才被唤醒
+String str = helloFuture.get();
+```
+
+在异步调用中还可以设置是否需要等待发送和返回值，设置如下：
+- `sent="true"`：等待消息发出，消息发送失败时将抛出异常；
+- `sent="true"`：不等待消息发送，将消息放入I/O队列，即可返回；
+- `return="false"`：只是想异步，完全忽略返回值，以减少Future对象的创建和管理成本。
+
+在远程调用的过程中如果出现异常或者需要回调，则可以使用Dubbo的事件通知机制，主要有以下三种事件：
+- oninvoke：为在发起远程调用之前触发的事件。
+- onreturn：为远程调用之后的回调事件。
+- onthrow：为在远程调用出现异常时触发的事件，可以在该事件中实现服务的降级，返回一个默认值等操作。
+
+在消费方配置指定的事件通知接口，配置如下：
+```
+<bean id="notify" class="com.bill.NotifyImpl" />
+<dubbo:reference id="helloService" interface="xxx.IHelloService">
+	<dubbo:method name="sayHello" async="true" onreturn="notify.onreturn" onthrow="notify.onthrow" />
+</dubbo:reference>
+```
+
+其中配置有以下几种情况：
+>- 异步回调：async=true onreturn="xxx"
+>- 同步回调：async=false onreturn="xxx"
+>- 异步无回调：async=true
+>- 同步无回调：async=false
+
+#### 10.Dubbo服务提供者线程池介绍一下
+
+Dubbo的服务提供者主要有两种线程池类型：一种是I/O处理线程池；另一种是业务调度线程池。Dubbo限制了I/O线程数，默认是核数+1，而服务调用的线程数默认是200。配置如下：
+```
+<dubbo:protocol name="dubbo" dispatcher="all" threadpool="fixed" threads="100" accepts="100" />
+```
+在实际项目中需要通过不同的派发策略和线程池配置的组合来应对不同的场景，对相关配置参数说明如下：
+
+***dispatcher参数(6个类型)：***
+- all：所有消息都被派发到线程池，包括请求、响应、连接事件、断开事件、心跳等(默认)。
+- direct：所有消息都不被派发到线程池，全部在I/O线程上直接执行。
+- message：只有请求相应消息派发到线程池，其他比如连接断开事件、心跳等消息直接在I/O线程上执行。
+- execution：只有请求消息派发到线程池，不含响应，响应和其他连接断开事件、心跳等消息直接在I/O线程上执行。
+- connection：在I/O线程上将连接断开事件放入队列，有序地逐个执行，讲其他消息派发到线程池。
+
+***threadpool参数(4个类型)：***
+- fixed：固定大小的线程池，在启动时建立线程，不关闭，一直持有(默认)。
+- cached：缓冲线程池，在空闲一分钟时会被自动删除，在需要时重建。
+- limited：扩容的线程池，但池中的线程数只会增长，不会收缩。只增长不收缩的目的是避免收缩时突然来了大流量所引起的性能问题。
+- eager：当所有核心线程数都处于忙碌状态时，优先创建新线程执行任务。
+
+***CachedThreadPool缓冲线程池，默认配置如下：***
+| 配置 | 配置值 |
+| --- | --- |
+| corePoolSize | 0 |
+| maximumPoolSize | Integer.MAX_VALUE |
+| keepAliveTime | 60s |
+| workQueue | 根据queue决定是SynchronousQueue还是LinkedBlockingQueue，默认queue=0，所以是SynchronousQueue |
+| threadFactory | NamedInternalThreadFactory |
+| rejectHandler | AbortPolicyWithReport |
+
+就默认配置来看，和Executors创建的差不多，存在内存溢出风险。NamedInternalThreadFactory主要用于修改线程名，方便我们排查问题。AbortPolicyWithReport对拒绝的任务打印日志，也是方便排查问题。
+
+***LimitedThreadPool扩容的线程池，默认配置如下：***
+| 配置 | 配置值 |
+| --- | --- |
+| corePoolSize | 0 |
+| maximumPoolSize | 200 |
+| keepAliveTime | Long.MAX_VALUE,相当于无限长 |
+| workQueue | 根据queue决定是SynchronousQueue还是LinkedBlockingQueue，默认queue=0，所以是SynchronousQueue |
+| threadFactory | NamedInternalThreadFactory |
+| rejectHandler | AbortPolicyWithReport |
+
+从keepAliveTime的配置可以看出来，LimitedThreadPool线程池的特性是线程数只会增加不会减少。
+
+***FixedThreadPool固定大小线程池(dubbo默认线程池)，默认配置如下：***
+| 配置 | 配置值 |
+| --- | --- |
+| corePoolSize | 200 |
+| maximumPoolSize | 200 |
+| keepAliveTime | 0 |
+| workQueue | 根据queue决定是SynchronousQueue还是LinkedBlockingQueue，默认queue=0，所以是SynchronousQueue |
+| threadFactory | NamedInternalThreadFactory |
+| rejectHandler | AbortPolicyWithReport |
+
+Dubbo的默认线程池，固定200个线程，就配置来看和LimitedThreadPool基本一致。如果一定要说区别，那就是FixedThreadPool等到创建完200个线程，再往队列放任务。而LimitedThreadPool是先放队列放任务，放满了之后才创建线程。
+
+***EagerThreadPool优先创建线程池，默认配置如下：***
+| 配置 | 配置值 |
+| --- | --- |
+| corePoolSize | 0 |
+| maximumPoolSize | Integer.MAX_VALUE |
+| keepAliveTime | 60s |
+| workQueue | 自定义实现TaskQueue，默认长度为1，使用时要自己配置下 |
+| threadFactory | NamedInternalThreadFactory |
+| rejectHandler | AbortPolicyWithReport |
+
+我们知道，当线程数量达到corePoolSize之后，只有当workqueue满了之后，才会增加工作线程。
+这个线程池就是对这个特性做了优化，首先继承ThreadPoolExecutor实现EagerThreadPoolExecutor，对当前线程池提交的任务数submittedTaskCount进行记录。
+其次是通过自定义TaskQueue作为workQueue，它会在提交任务时判断是否`currentPoolSize < submittedTaskCount < maxPoolSize`，然后通过workQueue的offer方法返回false导致增加工作线程。
+
+#### 11.Dubbo的服务降级
+
+服务熔断是一种保护措施，一般用于防止在软件系统中由于某些原因使服务出现了过载现象，从而造成整个系统发生故障，有时也被称为过载保护。服务降级则是在服务器压力剧增的情况下，根据当前的业务情况及流量对一些服务和页面有策略地进行降级，以释放服务器资源并保证核心任务的正常运行。
+
+Dubbo除了可以通过`onthrow`事件来做降级服务外，还可以使用mock配置来实现服务降级。mock在出现非业务异常（比如超时、提供者全部挂掉或网络异常等）时执行，mock支持如下两种配置：
+- 一种是配置为boolean值。默认配置为false，如果配置为true，则默认使用mock的类名，即类型+Mock后缀。
+- 另一种则是配置为return null，可以很简单地忽略掉异常。
+
+```
+<!-- 第一种配置 -->
+<dubbo:service interface="xxx.IHelloService" mock="true" />
+<!-- 另一种 -->
+<dubbo:service interface="xxx.IHelloService" mock="xxx.HelloServiceMock" />
+<!-- 如果只是简单地忽略异常，则可以如下设置 -->
+<dubbo:service interface="xxx.IHelloService" mock="return null" />
+```
 
 ### 二、注意事项和建议
 
@@ -300,7 +494,44 @@ Dubbo框架内置了负载均衡的功能及扩展接口，我们可以透明地
 
 (3)数据在被读取并反序列化后，会被交给业务线程池处理，在默认情况下线程池为固定的大小，并且在线程池满时排队等待执行的队列大小为0，所以它的最大并发量等于业务线程池的大小。但是，如果希望有请求的堆积能力，则可以调整`queues`属性来设置队列的大小。一般建议不要设置，因为在线程池满时应该立即失效，再自动重试其它服务提供者，而不是排队。
 
+#### 3.Dubbo线程方面的坑
+
+(1)线程数设置过少的问题。在使用的过程中如果出现以下异常，则可以适当增加`threads`的数量来解决线程不如的问题，Dubbo默认`threads`为200：
+```
+Caused by: java.util.conncurrent.RejectedExecutionException：Thread pool is EXHAUSTED!
+```
+
+(2)线程数设置过多的问题。如果线程数过多，则可能会受Linux用户线程数(Linux默认最大的线程数为1024个)的限制而导致异常，通常可以通过`ulimit -u`来解决，具体的异常信息如下：
+```
+java.lang.OutOfMemoryError: unable to create new native thread
+```
+
+(3)连接不上服务端的问题。在出现以下异常时会连接不上服务器，在大多数情况下可能是因为服务器没有正常启动或者网络无法连接，不过也有可能是因为超过了服务端的最大允许连接数，可以通过调大`accepts`的值解决：
+```
+com.alibaba.dubbo.remoting.RemotingException: Failed connect to server
+```
+
 ### 三、故障排除
+
+#### 1.从服务器的CPU，内存和I/O三方面查询故障和问题
+
+查看CPU或内存情况的命令如下：
+- `top`: 查看服务器的负载状况。
+- `top+1`: 在top视图中按键盘数字"1"查看每个逻辑CPU的使用情况。
+- `jstat`: 查看堆中各内存区域的变化及GC的工作状态。
+- `top+H`: 查看线程的使用情况。
+- `ps -mp pid -o THREAD,tid,time |sort -rn`: 查看指定进程中各个线程占用CPU的状态，选出耗时最多、最繁忙的线程ID。
+- `jstack`: 打印进程中的线程堆栈信息。
+
+判断内存溢出(OOM)方法如下：
+- 堆外内存溢出：由JNI的调用或NIO中的DirectByteBuffer等使用不当造成。
+- 堆内内存溢出：容易由程序中创建的大对象、全局集合、缓存、ClassLoader加载的类或大量的线程消耗等造成。
+- 使用`jmap -heap`命令、`jmap -histo`命令或者`jmap -dump:format=b,file=xxx.hprof`等命令查看JVM内存的使用情况。
+
+分析I/O读写问题的方法如下：
+- 文件I/O：使用命令`vmstat`、`lsof -c -p pid`等。
+- 网络I/O：使用命令`netstat -anp`、`tcpdump -i eth0 'dst host 239.33.11.23' -w raw.pcap`和`wireshark`工具等。
+- Mysql数据库：查看慢查询日志、数据库的磁盘空间、排查索引是否缺失，或使用`show processlist`检查具体的SQL语句情况。
 
 ### 四、源码和原理
 
