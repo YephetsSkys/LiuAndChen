@@ -131,7 +131,15 @@ epoll优点：
 epoll缺点：
 >- 编程模型比select/poll 复杂；
 
-#### 8.TCP 粘包/拆包的原因及解决方法？
+#### 8.Netty使用的是select还是epoll？
+
+NioEventLoop底层会根据系统选择select或者epoll。
+
+如果是windows系统，则底层使用WindowsSelectorProvider（select）实现多路复用；如果是linux，则使用epoll。
+
+当为select模式，在NioEventLoop对应的Selector中会维护着newKeys，updateKeys，cancelledKeys，分别是新增的fd，更新fd的感兴趣状态，取消fd监听。每当连接接入，或者断连，都会调用NioEventLoop的注册/解除注册方法，更新这几个集合。
+
+#### 9.TCP 粘包/拆包的原因及解决方法？
 
 TCP是以流的方式来处理数据，一个完整的包可能会被TCP拆分成多个包进行发送，也可能把小的封装成一个大的数据包发送。
 
@@ -145,7 +153,7 @@ TCP粘包/分包的原因：
 >- 包尾增加特殊字符分割：行分隔符类：LineBasedFrameDecoder或自定义分隔符类 ：DelimiterBasedFrameDecoder；
 >- 将消息分为消息头和消息体：LengthFieldBasedFrameDecoder类。分为有头部的拆包与粘包、长度字段在前且有头部的拆包与粘包、多扩展头部的拆包与粘包。
 
-#### 9.了解哪几种序列化协议？
+#### 10.了解哪几种序列化协议？
 
 序列化（编码）是将对象序列化为二进制形式（字节数组），主要用于网络传输、数据持久化等；而反序列化（解码）则是将从网络、磁盘等读取的字节数组还原成原始对象，主要用于网络传输对象的解码，以便完成远程调用；
 
@@ -159,13 +167,13 @@ TCP粘包/分包的原因：
 >- Protobuf，将数据结构以.proto文件进行描述，通过代码生成工具可以生成对应数据结构的POJO对象和Protobuf相关的方法和属性。优点：序列化后码流小，性能高、结构化数据存储格式（XML JSON等）、通过标识字段的顺序，可以实现协议的前向兼容、结构化的文档更容易管理和维护。缺点：需要依赖于工具生成代码、支持的语言相对较少，官方只支持Java 、C++ 、python。适用场景：对性能要求高的RPC调用、具有良好的跨防火墙的访问属性、适合应用层对象的持久化。
 >- Hessian，hessian比protobuf使用起来要简单的多，hessian序列化后的对象比Protobuf要小，传输带宽方面占有优势。
 
-#### 10.Netty的零拷贝实现？
+#### 11.Netty的零拷贝实现？
 
 >- Netty的接收和发送ByteBuffer采用DIRECT BUFFERS，使用堆外直接内存进行Socket读写，不需要进行字节缓冲区的二次拷贝。堆内存多了一次内存拷贝，JVM会将堆内存Buffer拷贝一份到直接内存中，然后才写入Socket中。ByteBuffer由ChannelConfig分配，而ChannelConfig创建ByteBufAllocator默认使用Direct Buffer；
 >- 通过 wrap方法, 我们可以将 byte[] 数组、ByteBuf、ByteBuffer等包装成一个 Netty ByteBuf 对象, 进而避免了拷贝操作；
 >- 通过 FileRegion 包装的FileChannel.tranferTo方法 实现文件传输, 可以直接将文件缓冲区的数据发送到目标 Channel，避免了传统通过循环write方式导致的内存拷贝问题；
 
-#### 11.为什么Netty的服务端要分Boss线程池和IO线程池？
+#### 12.为什么Netty的服务端要分Boss线程池和IO线程池？
 
 Boss线程池用于接收客户端的 TCP 连接，IO线程池用于处理 I/O 相关的读写操作，或者执行系统 Task、定时任务 Task 等。
 
@@ -173,7 +181,7 @@ Boss线程池用于接收客户端的 TCP 连接，IO线程池用于处理 I/O �
 >- 2.两个线程池分隔开，有利于代码维护；
 >- 3.可以防止IO操作阻塞请求链路建议；
 
-#### 12.为什么建议 Netty 的 I/O 线程与业务线程分离？
+#### 13.为什么建议 Netty 的 I/O 线程与业务线程分离？
 
 >- 1.充分利用多核的并行处理能力：I/O线程和业务线程分离，双方可以并行的处理网络I/O和业务逻辑，充分利用多核的并行计算能力，提升性能。
 >- 2.故障隔离：后端的业务线程池处理各种类型的业务消息，有些是I/O密集型、有些是CPU密集型、有些是纯内存计算型，不同的业务处理时延，以及发生故障的概率都是不同的。
@@ -181,7 +189,7 @@ Boss线程池用于接收客户端的 TCP 连接，IO线程池用于处理 I/O �
 >- 4.资源代价：NioEventLoopGroup的创建并不是廉价的，它会聚合Selector，Selector本身就会消耗句柄资源。
 >- 5.线程切换的代价：如果不是追求极致的性能，线程切换只要不过于频繁，它的代价还是可以接受的。
 
-#### 13.Netty的多线程编程最佳实践
+#### 14.Netty的多线程编程最佳实践
 
 >- 1.创建两个 NioEventLoopGroup,用于逻辑隔离 NIO Acceptor和 NIO I/O线程；
 >- 2.尽量不要在 ChannelHandler中启动用户线程(解码后用于将POJO消息派发到后端业务线程的除外)；
@@ -189,7 +197,7 @@ Boss线程池用于接收客户端的 TCP 连接，IO线程池用于处理 I/O �
 >- 4.如果业务逻辑操作非常简单,没有复杂的业务逻辑计算,没有可能会导致线程被阻塞的磁盘操作、数据库操作、网路操作等,可以直接在NIO线程上完成业务逻辑编排,不需要切换到用户线程；
 >- 5.如果业务逻辑处理复杂,不要在NIO线程上完成,建议将解码后的POJO消息封装成Task,派发到业务线程池中由业务线程执行,以保证NIO线程尽快被释放,处理其他的IO操作；
 
-#### 14.Netty应该设置的线程数
+#### 15.Netty应该设置的线程数
 
 默认情况下，NioEventLoopGroup默认创建CPU*2或者指定Java启动参数io.netty.eventLoopThreads=n的线程数。那如何计算实际需要的线程数呢？
 
@@ -199,7 +207,7 @@ Boss线程池用于接收客户端的 TCP 连接，IO线程池用于处理 I/O �
 
 由于用户场景的不同,对于一些复杂的系统,实际上很难计算出最优线程配置,只能是根据测试数据和用户场景,结合公式给出一个相对合理的范围,然后对范围内的数据进行性能测试,选择相对最优值。
 
-#### 15.Netty 中有哪几种重要组件？
+#### 16.Netty 中有哪几种重要组件？
 
 >- Channel：Netty 网络操作抽象类，它除了包括基本的 I/O 操作，如 bind、connect、read、write 等；
 >- EventLoop：主要是配合 Channel 处理 I/O 操作，用来处理连接的生命周期中所发生的事情；
@@ -207,7 +215,7 @@ Boss线程池用于接收客户端的 TCP 连接，IO线程池用于处理 I/O �
 >- ChannelHandler：充当了所有处理入站和出站数据的逻辑容器。ChannelHandler 主要用来处理各种事件，这里的事件很广泛，比如可以是连接、数据接收、异常、数据转换等；
 >- ChannelPipeline：为 ChannelHandler 链提供了容器，当 channel 创建时，就会被自动分配到它专属的 ChannelPipeline，这个关联是永久性的；
 
-#### 16.Channel与ChannelHandlerContext执行write方法的区别？
+#### 17.Channel与ChannelHandlerContext执行write方法的区别？
 
 在Netty中，有两种发送消息的方式。你可以直接写在Channel中，也可以写到和ChannelHandler相关联的ChannelHandlerContext对象中。前一种方式将会导致消息从ChannelPipeline的尾端开始流动，而后者将导致消息从ChannelPipline中的下一个ChannelHanlder开始流动。
 
@@ -231,11 +239,11 @@ public class InitialierHandler extends ChannelInitializer<SocketChannel> {
 
 我们使用ChannelHandlerContext的write从in2中输出，则消息会从 in2 -> out1 流转；
 
-#### 17.Netty中的write和writeAndFlush的区别是什么？
+#### 18.Netty中的write和writeAndFlush的区别是什么？
 
 前者只是进行了写,(写到了ByteBuf) 却没有将内容刷新到ByteBuffer,没有刷新到缓存中,就没办法进一步把它写入jdk原生的ByteBuffer中, 而writeAndFlush()就比较方便,先把msg写入ByteBuf,然后直接刷进socket,发送出去。
 
-#### 18.什么是写队列 ? 作用是啥?
+#### 19.什么是写队列 ? 作用是啥?
 
 当我们使用write来写入消息的时候，传递到Handler的最开始的位置，怎么办? unsafe也无法把它写给客户端, 难道丢弃不成？
 
@@ -282,7 +290,7 @@ Netty的ByteBuf的优点：
 
 采用倍增或步进算法的原因：如果以minNewCapacity作为目标容量，则本地扩容后如果还需要再写入，则需要再次扩容，频繁的内存复制会导致性能下降；
 
-采用先倍增后步进的原因：当内存比较小的情况下，倍增操作并不会带来太多的内存浪费，例如64字节->128字节->256字节。但是当内存增长到一定阈值后，再进行本增可能会带来大量的内存浪费，如10MB倍增后为20MB，但是系统可能只需要12MB。因此，达到4M阈值后就需要以步进的方式对内存进行平滑的扩张。
+采用先倍增后步进的原因：当内存比较小的情况下，倍增操作并不会带来太多的内存浪费，例如64字节->128字节->256字节。但是当内存增长到一定阈值后，再进行倍增可能会带来大量的内存浪费，如10MB倍增后为20MB，但是系统可能只需要12MB。因此，达到4M阈值后就需要以步进的方式对内存进行平滑的扩张。
 
 ## 三、性能与优化
 
