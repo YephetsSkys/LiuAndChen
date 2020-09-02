@@ -195,8 +195,18 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 
 3) 辅助信息相关
 
-```
--XX:+PrintGC -XX:+PrintGCDetails -XX:+PrintGCDateStamps -XX:+PrintHeapAtGC -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath -XX:ErrorFile -Xloggc
+-XX:+PrintGC：打印GC信息。<br>
+-XX:+PrintGCDetails：打印GC详细信息（比上面多打印用户、系统在GC中的耗时，每个的回收前后的值等）<br>
+-XX:+PrintGCDateStamps：GC日志按照年月日打印，否则打印的是进程启动后的时间，不利于定位问题。<br>https://www.baidu.com/link?url=x-tzXqb3CD6-rhIX0dOoRP5Vt3beNApEp0a2SiC-pIUQQqLfJWOe0I-ycSEcOc4p-jrYLk2N0sehw_XWj5uN_jrExelo4HzoUywxlsJHSba&wd=&eqid=af3b7c1400007217000000035f4f6eb0
+-XX:+PrintHeapAtGC：打印GC发生前的堆栈内存空间信息。<br>
+-XX:+HeapDumpOnOutOfMemoryError：在OOM后将内存堆栈导出。<br>
+-XX:HeapDumpPath=filePath：OOM后的内存堆栈信息导出到指定的位置。<br>
+-XX:ErrorFile：如果发生JVM错误(进程级错误)，将错误数据会保存到指定的位置。不配置则默认是./hs_err_pid%p.log。<br>
+-Xloggc：配置GC日志保存的文件路径，开启滚动可以在文件名中加%t参数。<br>
+-XX:+UseGCLogFileRotation：打开GC日志滚动记录功能，默认关闭。<br>
+-XX:NumberOfGCLogFiles：设置滚动日志文件的个数，必须大于等于1。<br>
+-XX:GCLogFileSize：设置滚动日志文件的大小，必须大于8K，默认也是8K。<br>
+-XX:+PrintGCCause：打印GC发生的原因，默认打开。<br>
 ```
 
 打印相关的GC日志等信息或输出OOM内存堆信息
@@ -315,6 +325,8 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 >- 2.其次判断是否是大对象，超过JVM配置`-XX:PretenureSizeThreshold=N`的值，则直接分配到老年代。
 >- 3.再判断是否只是TLAB`-XX:+UseTLAB`，如果支持则直接分配到线程的TLAB区，否则需要走指针碰撞分配到eden区。
 
+参考img下的***对象分配流程图.png***
+
 #### 19.对象如何晋升到老年代？
 
 >- 1.对象年龄到期晋升，根据参数`-XX:MaxTenuringThreshold`设置的年龄来晋升到老年代，此值默认是15，对象头是有4bit记录的对象的年轻（4bit最大也就是15）。
@@ -403,6 +415,28 @@ TLAB是虚拟机在堆内存的eden划分出来的一块专用空间，是线程
 - 2) 当线程请求的栈深度超过了虚拟机允许的最大深度时，会抛出StackOverFlowError异常，方法递归调用肯可能会出现该问题；
 - 3) 调整参数-xss去调整jvm栈的大小。
 
+#### 26.JVM中的指针压缩原理？
+
+指针压缩主要涉及到三个JVM参数：
+>- CompressedClassSpaceSize：使用压缩的类指针时，Metaspace中的类区域的最大大小，默认1G(最大不能超过3G)。查看真正占用大小可以使用命令`jcmd pid GC.heap_info`。
+>- UseCompressedOops：是否开启普通对象指针压缩，默认开启。
+>- UseCompressedClassPointers：是否开启类指针压缩，默认开启，如果关闭UseCompressedOops，则JVM会报错。
+
+哪些信息会被压缩：
+>- 对象的全局静态变量(即类属性)；
+>- 对象头信息：64位平台下，原生对象头大小为16字节，压缩后为12字节；
+>- 对象的引用类型：64位平台下，引用类型本身大小为8字节，压缩后为4字节；
+>- 对象数组类型：64位平台下，数组类型本身大小为24字节，压缩后16字节；
+
+哪些不会被压缩：
+指向非堆的Class对象指针，本地变量，堆栈元素，入参，返回值，NULL指针不会被压缩等。
+
+***CompressedOops的原理：***
+32位内最多可以表示4GB，64位地址分为堆的基地址+偏移量，当堆内存<32GB时候，在压缩过程中，把偏移量/8后保存到32位地址。在解压再把32位地址放大8倍（这就解释了为什么JVM的对象占用内存必须是8的倍数），所以启用CompressedOops的条件是堆内存要在4GB*8=32GB以内。所以压缩指针之所以能改善性能，是因为它通过对齐（Alignment），还有偏移量（Offset）将64位指针压缩成32位。换言之，性能提高是因为使用了更小更节省空间的压缩指针而不是完整长度的64位指针，CPU缓存使用率得到改善，应用程序也能执行得更快。
+
+***零基压缩优化(Zero Based Compressd Oops)：***
+零基压缩是针对压解压动作的进一步优化。 它通过改变正常指针的随机地址分配特性，强制堆地址从零开始分配（需要OS支持），进一步提高了压解压效率。要启用零基压缩，你分配给JVM的内存大小必须控制在4G以上，32G以下。如果GC堆大小在4G以下，直接砍掉高32位，避免了编码解码过程 如果GC堆大小在4G以上32G以下，则启用UseCompressedOop 如果GC堆大小大于32G，压指失效，使用原来的64位（所以说服务器内存太大不好......）。
+
 ### 二、垃圾回收
 
 #### 1.垃圾收集算法有哪些？
@@ -442,10 +476,22 @@ Java分新生代收集器和老年代收集器，全堆收集器等三种。
 ***老年代收集器***
 >- Serial Old收集器是Serial收集器的老年代版本，它同样是一个单线程收集器，使用“标记-整理”算法。
 >- Parallel Old收集器是Parallel Scavenge收集器的老年代版本，使用多线程和“标记-整理”算法。
->- CMS收集器是一种以获取最短回收停顿时间为目标的收集器，关注系统的停顿时间，使用“标记-清楚”算法。
+>- CMS收集器是一种以获取最短回收停顿时间为目标的收集器，关注系统的停顿时间，使用“标记-清除”算法。
 
 ***全堆收集器***
 >- G1收集器属于分代垃圾回收器，虽然也分了新生代，老年代等，但是实际上已经不要求各个代在空间上连续。关注系统的停顿时间，整理基于“标记-整理”算法，局部使用“复制”算法。
+>- Shenandoah收集器基本跟G1差不多，但是最重要的区别是支持并发的整理算法。
+>- ZGC收集器跟上面两个都是采用基于Region的堆内存布局，但是最重要的区别的ZGC的Region具有动态性--动态创建和销毁，以及动态的区域容量大小。
+
+***其他***
+>- Epsilon收集器主要是以不能够进行垃圾收集为“卖点”的垃圾收集器。（比如测试调式的时候想看垃圾产生的一个锅程或者自己的项目不需要GC参与可以使用这个）
+
+按照类型和内存支撑可以区分如下几种：
+>- Serial算法，大概支持1G内存以下比较好。
+>- Parallel算法，几个G内存的支持。
+>- CMS 十来个G内存的支持。
+>- G1 上百G内存支持。
+>- ZGC和Shenandoah T级别的支持。
 
 #### 6.CMS收集器和G1收集器的区别？
 
@@ -455,7 +501,7 @@ Java分新生代收集器和老年代收集器，全堆收集器等三种。
 
 #### 7.请讲一讲CMS收集器的工作过程。
 
-CMS收集器的工作过程比其他收集器（除了G1）略显复杂。主要步骤有：
+CMS收集器的工作过程比其他收集器（除了G1、ZGC、Shenandoah）略显复杂。主要步骤有：
 
 初始标记 -> 并发标记 -> 重新标记 -> 并发清除 -> 并发重置
 
