@@ -336,7 +336,11 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 >- 5.分配的对象大于Eden区，则直接进入老年代。
 >- 6.Eden剩余空间不足分配且分配的对象大小大于Eden区的一半，并且垃圾收集器使用的是`-XX:+UseParallelGC`、`-XX:+UseParallelOldGC`、`-XX:+UseG1GC`这三种，则对象分配到老年代，不触发Minor GC。
 
-#### 20.Object obj = new Object()在内存中占用多少字节？
+#### 20.到底多大的对象会被直接扔到老年代？
+
+参考上题的5,6项。
+
+#### 21.Object obj = new Object()在内存中占用多少字节？
 
 在32位虚拟机，markword(4字节)+元数据指针(4字节) + obj这个指针(4字节) = 12字节。
 
@@ -346,7 +350,7 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 
 指针压缩技术对Class对象指针，本地变量，堆栈元素，入参，返回值，NULL指针不会被压缩，并且堆大小不能***超过32G***。
 
-#### 21.Java对象在内存中的存储布局（64位开启指针压缩）
+#### 22.Java对象在内存中的存储布局（64位开启指针压缩）
 
 | 普通对象 | 数组对象 |
 | --- | --- |
@@ -356,11 +360,11 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 | 对齐填充 | 实例数据 |
 | | 对齐填充 |
 
-#### 22.Class对象默认情况下是存在Heap里面还是Perm中（JDK8一律分配在Heap中）？
+#### 23.Class对象默认情况下是存在Heap里面还是Perm中（JDK8一律分配在Heap中）？
 
 Class对象默认分配在Heap中，JDK8之前如果我们设置了`-XX:+UnlockDiagnosticVMOptions`，`-XX:+JavaObjectsInPerm`这两个参数，那将分配在Perm里。其实也没啥用，主要是为了分析查找问题等。
 
-#### 23.volatile的实现原理？
+#### 24.volatile的实现原理？
 
 1.Java源码
 
@@ -380,7 +384,7 @@ MESI(多CPU缓存的一致性和可见性，其实就是缓存过期策略通知
 
 通过一些测试代码，再加上`java -XX:+UnlockDiagnosticVMOptions -XX:+PrintAssembly`打印JVM编译的汇编码。可以看到volatile和synchronized等都是使用底层CPU的Lock指令。
 
-#### 24.你知道Java虚拟机的TLAB吗？跟我讲一讲？
+#### 25.你知道Java虚拟机的TLAB吗？跟我讲一讲？
 
 TLAB全程叫Thread Local Allocation Buffer，也即线程本地分配缓冲。这部分Buffer是从堆中划分出来的，但是是本地线程独享的。可以被其他线程读取，但是不能被其他线程写入。
 
@@ -409,13 +413,13 @@ TLAB是虚拟机在堆内存的eden划分出来的一块专用空间，是线程
 `-XX:TLABSize`选项为指定TLAB的大小，这个选项一般不需要设置，会自动根据`-XX:TLABWasteTargetPercent`来赋予初始值，并且会自动调整TLAB的大小；<br>
 `-XX:MinTLABSize`选项是指最小TLAB的值，默认为2048；<br>
 
-#### 25.什么情况下会发生栈内存溢出？
+#### 26.什么情况下会发生栈内存溢出？
 
 - 1) 栈是线程私有的，栈的生命周期和线程一样，每个方法在执行的时候就会创建一个栈帧，它包含局部变量表、操作数栈、动态链接、方法出口等信息，局部变量表又包括基本数据类型和对象的引用；
 - 2) 当线程请求的栈深度超过了虚拟机允许的最大深度时，会抛出StackOverFlowError异常，方法递归调用肯可能会出现该问题；
 - 3) 调整参数-xss去调整jvm栈的大小。
 
-#### 26.JVM中的指针压缩原理？
+#### 27.JVM中的指针压缩原理？
 
 指针压缩主要涉及到三个JVM参数：
 >- CompressedClassSpaceSize：使用压缩的类指针时，Metaspace中的类区域的最大大小，默认1G(最大不能超过3G)。查看真正占用大小可以使用命令`jcmd pid GC.heap_info`。
@@ -566,7 +570,11 @@ promotion failed触发的是我们常说的的Full GC，对年轻代和老年代
 >- 堆太小，如果不是对延迟有特别高的需求，不建议使用CMS，主要是由于CMS的几个缺点导致的：（1）并发周期的触发比例不好设置；（2）抢占CPU时间；（3）担保判断导致YGC变慢；（4）碎片问题。
 >- 除了看吞吐量和延时，还需要看具体的应用，比方说ES，Lucene和G1是不兼容的，因此默认的收集器就是CMS。
 
-#### 15.请讲一讲G1的垃圾收集过程是怎样的？
+#### 15.听说过CMS的并发预处理和并发可中断预处理吗？
+
+<font color="red">未完待续</font>
+
+#### 16.请讲一讲G1的垃圾收集过程是怎样的？
 
 G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混合收集、Full GC。
 
@@ -578,7 +586,7 @@ G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混
 
 ***Full GC***如果在年轻代区间或者老年代区间执行拷贝存活对象操作的时候，找不到一个空闲的区间，就会在GC日志中看到诸如“to-space exhausted”这样的错误日志，则G1 GC会尝试去扩展可用的Java堆内存大小。如果扩展失败，G1 GC会触发它的失败保护机制并且启动单线程的Full GC动作。这个阶段，单线程会针对整个堆内存里的所有区间进行标记、清除、压缩等工作。
 
-#### 16.请讲一讲G1的并发标记周期的过程？
+#### 17.请讲一讲G1的并发标记周期的过程？
 
 >- 初始标记，这个阶段是独占式的，它会停止所有的Java线程，然后开始标记根节点可及的所有对象。这个阶段可以和年轻代回收同时执行，这样的设计方式主要是为了加快独占阶段的执行速度。
 >- 根区间扫描，这个阶段是并发的，可以和Java应用程序线程同时运行。在年轻代回收的初始标记阶段拷贝到幸存者区间的对象需要被扫描并被当作标记根元素。任何从幸存者区间过来的引用都会被标记，基于这个原理，幸存者区间也被称为根区间。根区间扫描阶段必须在下一个垃圾回收暂停之前完成，这是因为所有从幸存者区间来的引用需要在整个堆区间扫描之前完成标记工作。
@@ -586,7 +594,7 @@ G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混
 >- 最终标记阶段是整个标记阶段的最后一环。这个阶段是一个独占式阶段，在整个独占式过程中，G1 GC完全处理 遗留的STAB日志缓存、更新。这个阶段主要的目标是统计存活对象的数量，同时也对引用对象进行处理。如果你的应用程序使用了大量的引用对象，那么这个阶段耗时会有所增加。
 >- 清除阶段，在统计期间，G1 GC会识别完全空的区域和可供进行混合垃圾回收的区域。清理阶段在将空白区域重置并添加到空闲列表时为部分并发。完全空的Region不会被加到CSet中，都在这个阶段直接回收了。此阶段与应用程序是并发执行的。
 
-#### 17.请讲一讲G1的混合回收？
+#### 18.请讲一讲G1的混合回收？
 
 G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点，最终确认所有的存活对象和每一个区间的存活对象比例。当老年代的占有率达到了`-XX:InitiatingHeapOccupancyPercent=45`，一个并行标记循环被初始化并启动了。在最后阶段，G1计算每个老年代区间的存活对象数量，并且在清理阶段会对每个老年代区间进行打分。这个阶段完成之后，G1开始一次混合回收。
 
@@ -600,7 +608,7 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 
 `-XX:G1HeapWastePercent=5`，这个选项对于控制一次混合回收循环回收的老年代区间数量有很大的影响作用。对于每一次混合回收暂停，在每次YGC之后和再次发生Mixed GC之前，会检查垃圾占比是否达到此参数，只有达到了，下次才会发生Mixed GC。
 
-#### 18.请跟我讲讲跟G1收集器相关的JVM参数有哪些？
+#### 19.请跟我讲讲跟G1收集器相关的JVM参数有哪些？
 
 -XX:+UseG1GC：打开G1收集器开关<br>
 -XX:MaxGCPauseMillis：指定最大停顿时间<br>
@@ -608,7 +616,7 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 -XX:InitiatingHeapOccupancyPercent：当整个堆使用率达到多少触发并发标记周期的执行，默认值45。<br>
 -XX:G1HeapRegionSize：每个Region的大小，最小1M，最大32M<br>
 
-#### 19.Metaspace相关的知识
+#### 20.Metaspace相关的知识
 
 >- 1.我们在指定`-XX:MetaspaceSize`的时候，虚拟机在启动的时候不会默认就申请`-XX:MetaspaceSize`指定的内存，一般初始容量是21807104（约20.8m）。
 >- 2.Metaspace由于使用不断扩容到-XX:MetaspaceSize参数指定的量，就会发生FGC；且之后每次Metaspace扩容都会发生FGC；
@@ -623,19 +631,19 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 >- 11.`-XX:MinMetaspaceFreeRatio`当进行过Metaspace GC之后，会计算当前Metaspace的空闲空间比，如果空闲比小于这个参数，那么虚拟机将增长Metaspace的大小。在本机该参数的默认值为40，也就是40%。设置该参数可以控制Metaspace的增长的速度，太小的值会导致Metaspace增长的缓慢，Metaspace的使用逐渐趋于饱和，可能会影响之后类的加载。而太大的值会导致Metaspace增长的过快，浪费内存；
 >- 12.`-XX:MaxMetaspaceFreeRatio`当进行过Metaspace GC之后， 会计算当前Metaspace的空闲空间比，如果空闲比大于这个参数，那么虚拟机会释放Metaspace的部分空间。在本机该参数的默认值为70，也就是70%；
 
-#### 20.线程大小相关的知识
+#### 21.线程大小相关的知识
 
 >- 1.`-XX:ThreadStackSize`和`-Xss`两个是一个意思，都是设置Java线程栈大小，但是`-Xss`需要添加上单位信息，而`-XX:ThreadStackSize`默认单位是KB，可以不需要添加；
 >- 2.`-XX:ThreadStackSize`在64位虚拟机中默认为1M，32位虚拟机为512K，需要4K对齐；
 >- 3.`-XX:CompilerThreadStackSize`设置编译线程栈大小，64位默认大小为4M，32位默认大小为2M，比如C2 CompilerThread等线程；
 
-#### 21.CodeCache Size相关参数
+#### 22.CodeCache Size相关参数
 
 >- 1.`-XX:InitialCodeCacheSize`是CodeCache初始化的时候的大小，但是随着CodeCache的增长不会降下来，但是CodeCache里的block是可以复用的；
 >- 2.`-XX:ReservedCodeCacheSize`是设置CodeCache最大值的内存值，默认值是48M，如果开启分层编译则是240M(默认JDK8是开启分层编译)，同时`-XX:ReservedCodeCacheSize`不能超过2G；
 >- 3.`-XX:CodeCacheMinimumFreeSpace`表示当CodeCache的可用大小不足这个值的时候，就会进行Code Cache Full的处理（处理期间整个jit会暂停，并且有且仅有一次打印code_cache_full到控制台，进行空间回收等操作）；
 
-#### 22.堆外内存相关参数
+#### 23.堆外内存相关参数
 
 >- 1.`-XX:MaxDirectMemorySize`设置堆外内存的大小，默认值是Xms-S0大小。
 
