@@ -294,6 +294,8 @@ Netty的ByteBuf的优点：
 
 ## 三、性能与优化
 
+未完待续
+
 ## 四、常见的问题
 
 #### 1.消息处理使用ChannelInboundHandlerAdapter造成内存泄露的问题？
@@ -398,7 +400,7 @@ protected void onUnhandledInboundMessage(Object msg) {
 }
 ```
 
-***3.将RouterServerHandler继承SimpleChannelInboundHandler类
+***3.将RouterServerHandler继承SimpleChannelInboundHandler类***
 ```
 public class RouterServerHandler extends SimpleChannelInboundHandler<ByteBuf> {
 	
@@ -438,6 +440,78 @@ public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception 
 }
 ```
 
+#### 2.客户端发送队列积压导致内存泄露
+
+客户端编写程序，循环向服务端发送数据
+```
+public void channelActive(final ChannelHandlerContext ctx) {
+	new Thread(() -> {
+		try {
+            TimeUnit.SECONDS.sleep(30);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+		
+		ByteBuf msg = null;
+		while (true) {
+			msg = Unpooled.wrappedBuffer("Netty OOM Example".getBytes());
+            ctx.writeAndFlush(msg);
+        }
+	}).start();
+}
+```
+
+运行一段时间后，会发现内存飙升，最终OOM。
+调用堆栈信息分析后，发现真正泄露的对象是WriteAndFlushTask，那为什么消息发送队列会积压呢？
+通过源码发现，调用Channel的write方法时，如果发送方为业务线程，则将发送操作封装成WriteTask，放到Netty的NioEventLoop中执行。io.netty.channel.AbstractChannelHandlerContext类的源码：
+```
+private void write(Object msg, boolean flush, ChannelPromise promise) {
+    AbstractChannelHandlerContext next = findContextOutbound();
+    final Object m = pipeline.touch(msg, next);
+    EventExecutor executor = next.executor();
+    if (executor.inEventLoop()) {
+        ...
+    } else {
+        AbstractWriteTask task;
+        if (flush) {
+            task = WriteAndFlushTask.newInstance(next, m, promise);
+        }  else {
+            task = WriteTask.newInstance(next, m, promise);
+        }
+        safeExecute(executor, task, promise, m);
+    }
+}
+```
+
+显然Netty的I/O线程NioEventLoop无法完成如此多消息的发送，因此发送任务队列积压，进而导致内存泄露。
+
+解决办法就是利用Netty提供的高低水位机制，可以实现客户端更精准的流控。当发送队列待发送的字节数组达到高水位时，对应的Channel就变为不可写状态。由于高水位并不影响业务线程调用write方法并把消息加入待发送队列，因此，必须在消息发送时对Channel的状态进行判断。
+```
+public void channelActive(final ChannelHandlerContext ctx) {
+	ctx.channel().config().setWriteBufferHighWaterMark(10 * 1024 * 1024);//限制高水位字节数
+	new Thread(() -> {
+		try {
+            TimeUnit.SECONDS.sleep(30);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+		
+		ByteBuf msg = null;
+		while (true) {
+			if (ctx.channel().isWritable()) {//这里判断是否到达高水位
+                msg = Unpooled.wrappedBuffer("Netty OOM Example".getBytes());
+                ctx.writeAndFlush(msg);
+            } else {
+                LOG.warning("The write queue is busy : " + ctx.channel().unsafe().outboundBuffer().nioBufferSize());
+            }
+        }
+	}).start();
+}
+```
+
+其它可能导致发送队列积压的因素：
+>- (1)网络瓶颈，当发送速度超过网络链接处理能力，会导致发送队列积压。
+>- (2)当对端读取速度小于已方发送速度，导致自身TCP发送缓冲区满，频繁发生write0字节时，待发送消息会在Netty发送队列中排队。
 
 ## 五、其它
 
