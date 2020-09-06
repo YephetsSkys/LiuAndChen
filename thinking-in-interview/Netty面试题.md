@@ -294,6 +294,132 @@ Netty的ByteBuf的优点：
 
 ## 三、性能与优化
 
-## 四、其它
+## 四、常见的问题
+
+#### 1.消息处理使用ChannelInboundHandlerAdapter造成内存泄露的问题？
+
+如下代码：
+```
+public class RouterServerHandler extends ChannelInboundHandlerAdapter {
+	
+	static ExecutorService executorService = Executors.newSingleThreadExecutor();
+
+	@Override
+	public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+		ByteBuf reqMsg = (ByteBuf)msg;
+		byte[] body = new byte[reqMsg.readableBytes()];
+		
+		executorService.execute(() -> {
+			//其他业务代码
+		});
+	}
+
+}
+```
+在经过一段时间的运行后，会出现内存不断飙升，最终OOM。
+
+我们通过代码io.netty.channel.nio.AbstractNioByteChannel.NioByteUnsafe.read()方法
+```
+public final void read() {
+    final ChannelConfig config = config();
+    final ChannelPipeline pipeline = pipeline();
+    final ByteBufAllocator allocator = config.getAllocator();
+    final RecvByteBufAllocator.Handle allocHandle = recvBufAllocHandle();
+    allocHandle.reset(config);
+
+    ByteBuf byteBuf = null;
+    boolean close = false;
+    try {
+        do {
+            byteBuf = allocHandle.allocate(allocator);//最终调用的是PooledByteBufAllocator的内存池ByteBuf分配
+            allocHandle.lastBytesRead(doReadBytes(byteBuf));
+            if (allocHandle.lastBytesRead() <= 0) {
+                // nothing was read. release the buffer.
+                byteBuf.release();
+                byteBuf = null;
+                close = allocHandle.lastBytesRead() < 0;
+                break;
+            }
+
+            allocHandle.incMessagesRead(1);
+            readPending = false;
+            pipeline.fireChannelRead(byteBuf);//此处调用的是ChannelHandler的channelRead方法
+            byteBuf = null;
+        } while (allocHandle.continueReading());
+
+        allocHandle.readComplete();
+        pipeline.fireChannelReadComplete();
+
+        if (close) {
+            closeOnRead(pipeline);
+        }
+    } catch (Throwable t) {
+        handleReadException(pipeline, byteBuf, t, close, allocHandle);
+    } finally {
+        ...
+    }
+}
+```
+
+意味着我们在RouterServerHandler类中获取到的ByteBuf对象是内存池分配的，但是我们重写了channelRead方法却没有主动释放ByteBuf，则造成了读数据的内存池泄露。
+
+修改办法很简单：
+
+***1.代码中主动释放***
+```
+public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+	ByteBuf reqMsg = (ByteBuf)msg;
+	byte[] body = new byte[reqMsg.readableBytes()];
+	//此处为新增的代码
+	ReferenceCountUtil.release(reqMsg);
+	
+	executorService.execute(() -> {
+		//其他业务代码
+	});
+}
+```
+
+***2.将RouterServerHandler继承SimpleChannelInboundHandler类
+```
+public class RouterServerHandler extends SimpleChannelInboundHandler<ByteBuf> {
+	
+	static ExecutorService executorService = Executors.newSingleThreadExecutor();
+
+	@Override
+	protected void channelRead0(ChannelHandlerContext ctx, ByteBuf msg) throws Exception {
+		ByteBuf reqMsg = (ByteBuf)msg;
+		byte[] body = new byte[reqMsg.readableBytes()];
+		
+		executorService.execute(() -> {
+			//其他业务代码
+		});
+	}
+
+}
+```
+
+我们查看SimpleChannelInboundHandler类的源码：
+```
+public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+    boolean release = true;
+    try {
+        if (acceptInboundMessage(msg)) {
+            @SuppressWarnings("unchecked")
+            I imsg = (I) msg;
+            channelRead0(ctx, imsg);
+        } else {
+            release = false;
+            ctx.fireChannelRead(msg);
+        }
+    } finally {
+        if (autoRelease && release) {
+            ReferenceCountUtil.release(msg);//此处主动释放了内存池对象
+        }
+    }
+}
+```
+
+
+## 五、其它
 
 
