@@ -379,7 +379,26 @@ public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception 
 }
 ```
 
-***2.将RouterServerHandler继承SimpleChannelInboundHandler类
+***2.在channelRead中一直调用ctx.fireChannelRead()***
+
+最后其会调用到DefaultChannelPipeline的内部类对象TailContext的channelRead()方法，来进行释放
+```
+public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+    onUnhandledInboundMessage(msg);
+}
+
+protected void onUnhandledInboundMessage(Object msg) {
+    try {
+        logger.debug(
+                "Discarded inbound message {} that reached at the tail of the pipeline. " +
+                        "Please check your pipeline configuration.", msg);
+    } finally {
+        ReferenceCountUtil.release(msg);
+    }
+}
+```
+
+***3.将RouterServerHandler继承SimpleChannelInboundHandler类
 ```
 public class RouterServerHandler extends SimpleChannelInboundHandler<ByteBuf> {
 	
