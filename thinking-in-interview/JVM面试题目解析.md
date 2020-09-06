@@ -207,7 +207,6 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 -XX:NumberOfGCLogFiles：设置滚动日志文件的个数，必须大于等于1。<br>
 -XX:GCLogFileSize：设置滚动日志文件的大小，必须大于8K，默认也是8K。<br>
 -XX:+PrintGCCause：打印GC发生的原因，默认打开。<br>
-```
 
 打印相关的GC日志等信息或输出OOM内存堆信息
 
