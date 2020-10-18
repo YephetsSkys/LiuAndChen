@@ -12,5 +12,6 @@
     <orderEntry type="jdk" jdkName="1.8" jdkType="JavaSDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" name="Maven: io.netty:netty-all:4.1.12.Final" level="project" />
+    <orderEntry type="library" name="Maven: io.netty:netty-all:4.1.12.Final" level="project" />
   </component>
 </module>
