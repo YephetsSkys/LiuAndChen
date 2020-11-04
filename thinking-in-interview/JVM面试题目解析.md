@@ -677,6 +677,14 @@ jstat [ option vmid [interval[s|ms] [ccount]] ]
 | -compiler | 输出即时编译器编译过的方法、耗时等信息 |
 | -printcompilation | 输出已经被即时编译的方法 |
 
+#### 2.常用的命令
+
+`java -XX:+PrintFlagsFinal -version` 打印JVM配置参数的默认值
+
+`java -XX:+PrintCommandLineFlags -version` 打印JVM启动时的一些初始化参数，`PrintCommandLineFlags`必须放置在其他参数之后
+
+`jinfo -flags pid` 打印JVM运行时的一些参数
+
 
 ### 四、JVM故障诊断与性能优化
 
