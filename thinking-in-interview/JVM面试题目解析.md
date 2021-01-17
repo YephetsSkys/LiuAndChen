@@ -571,7 +571,27 @@ promotion failed触发的是我们常说的的Full GC，对年轻代和老年代
 
 #### 15.听说过CMS的并发预处理和并发可中断预处理吗？
 
-<font color="red">未完待续</font>
+CMS在并发标记和重新标记中间会有另外两个动作，一个是`并发预处理`即`concurrent-preclean`，一个是`并发中断预处理`即`concurrent-abortable-preclean`。
+
+***并发预处理做了什么？***<br>
+cms回收器在老年代GC的时候，会使用到`Card Table`，目的不是找到跨带引用（年轻代到老年代的跨代引用是通过从 gc root 遍历对象标记的），而是找到前面`concurrent-marking`阶段被应用线程并发修改的对象引用。`concurrent-preclean`阶段是对这些`card marking`产生的`dirty card`进行`clean`，`cms gc`线程会扫描`dirty card`对应的内存区域，更新之前记录的过时的引用信息，并且去掉`dirty card`标记。<br>
+
+***并发中断预处理做了什么？***<br>
+`concurrent-abortable-preclean`阶段目的是减轻`final remark`阶段（会暂停应用线程）的负担，这个阶段同样会对`dirty card`的扫描和清理，和`concurrent-preclean`的区别在于，`concurrent-abortable-preclean`会重复地以迭代的方式执行，直到满足退出条件。但是`concurrent-preclean`已经处理过`dirty card`，为什么JVM还需要再执行一个类似的阶段呢？<br>
+如果`final-remark`阶段开始时刚好进行了`young gc`（比如`ParNew`）,应用程序刚因为`young gc`暂停，然后又会因为`final-remark`暂停，造成连续的长暂停。除此之外，因为`young gc`线程修改了存活对象的引用地址，会产生很多需要重新扫描的对象，增加了`final-remark`的工作量。所以`concurrent-abortable-preclean`除了`clean card`的作用，还有调度`final-remark`开始时机的作用参考。`cms`回收器认为`final-remark`最理想的执行时机就是年轻代占用在`50%`时，这时刚好处于上次`young gc`完成（0%）和下次`young gc`开始（100%）的中间节点。<br>
+
+***相关的配置***<br>
+>- `abortable-preclean`的*中断条件*，配置参数是`-XX:CMSScheduleRemarkEdenPenetration=50`，表示当`eden`区内存占用到达50%时，中断`abortable-preclean`，开始执行`final-remark`。
+>- `abortable-preclean`的*触发条件*，配置参数是`-XX:CMSScheduleRemarkEdenSizeThreshold=2m`，表示当`eden`区内存占用超过`2M`时才会执行`abortable-preclean`，否则没有执行的必要。
+>- `abortable-preclean`的*主动退出条件*，配置参数是`-XX:CMSMaxAbortablePrecleanTime=5000`，表示当`abortable-preclean`执行时间到了5秒，不管有没有到`-XX:+CMSScheduleRemardEdenPenetration`都会中止此阶段，进入`final-remark`。还有一个参数是`-XX:CMSMaxAbortablePrecleanLoops=0`，表示`abortable-preclean`的执行次数超过了这个值（默认为0，表示不限制次数）也会进入到`final-remark`。主要因为如果年轻代内存占用增长缓慢，那么`abortable-preclean`要长时间执行，可能因为`preclean`赶不上应用线程创造`dirty card`的速度导致`dirty card`越来越多，此时还不如执行一个`final-remark`。
+
+当然如果能在进入`final-remark`阶段之前，能够进行一次`Minor GC`的话，可以减少`final-remark`阶段的停顿时间，可以通过`-XX:+CMSScavengeBeforeRemark`参数来控制。但凡事都有利弊，`Minor GC`后紧跟着一个`remark pause`，如此一来，停顿时间也比较久。
+
+***相同GC日志参数***<br>
+`-XX:+PrintCMSStatistics`可以查看GC日志中`cms`回收器在`preclean`阶段执行的操作<br>
+`-XX:+PrintGCCause`查看GC原因<br>
+`-XX:+PrintGCTimeStamps`打印GC发生时候相对于应用启动的时间点<br>
+`-XX:+PrintGCDetails`查看GC详情<br>
 
 #### 16.请讲一讲G1的垃圾收集过程是怎样的？
 
