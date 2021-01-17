@@ -6,6 +6,8 @@ target/
 *.tar
 *.tar.gz
 
+# log
+
 # eclipse ignore
 .settings/
 .project
@@ -14,6 +16,8 @@ target/
 bin/
 .factorypath
 .springBeans
+.metadata
+.recommenders
 
 # idea ignore
 .idea/
@@ -23,6 +27,8 @@ bin/
 
 # temp ignore
 *.log
+*.log.gz
+*.gz
 *.cache
 *.diff
 *.patch
