@@ -564,6 +564,27 @@ promotion failed触发的是我们常说的的Full GC，对年轻代和老年代
 >- promotion failed是说，担保机制确定老年代是否有足够的空间容纳新来的对象，如果担保机制说有，但是真正分配的时候发现由于碎片导致找不到连续的空间而失败；
 >- concurrent mode failure是指并发周期还没执行完，用户线程就来请求比预留空间更大的空间了，即后台线程的收集没有赶上应用线程的分配速度。
 
+#### 14.CMS有哪两种GC实现方式？它们的区别是什么？触发条件是什么？
+
+`CMS GC`在实现上分成`foreground collector`和`background collector`。
+
+*** foreground collector ***
+`foreground collector`触发条件比较简单，一般是遇到对象分配但空间不够，就会直接触发 GC，来立即进行空间回收。采用的算法是`mark sweep`，不压缩（12小节有说明）。会暂停整个应用，做一次老年代收集，行为跟`Serial Old`一样。
+
+*** background collector ***
+
+`background collector`的流程，它是通过`CMS`后台线程不断的去扫描，过程中主要是判断是否符合`background collector`的触发条件，一旦有符合的情况，就会进行一次`background`的`collect`。
+
+每次扫描过程中，先等`CMSWaitDuration`时间，然后再去进行一次`shouldConcurrentCollect`判断，看是否满足`CMS background collector`的触发条件。`CMSWaitDuration`默认时间是`2s`（经常会有业务遇到频繁的`CMS GC`，注意看每次`CMS GC`之间的时间间隔，如果是`2s`，那基本就可以断定是`CMS`的`background collector`）。
+
+其触发条件常见的有六种：
+>- 1.`GC cause`是`gclocker`且配置了`GCLockerInvokesConcurrent`参数, 或者`GC cause`是`javalangsystemgc`（就是 System.gc()调用）且配置了`ExplicitGCInvokesConcurrent`参数；
+>- 2.未配置`UseCMSInitiatingOccupancyOnly`时，会根据统计数据动态判断是否需要进行一次`CMS GC`。预测`CMS GC`完成所需要的时间大于预计的老年代将要填满的时间，则进行`GC`。 这些判断是需要基于历史的`CMS GC`统计指标，然而，第一次`CMS GC`时，统计数据还没有形成，是无效的，这时会跟据`Old Gen`的使用占比来判断是否要进行`GC`。那占多少比率，开始回收呢？（也就是`CMSBootstrapOccupancy`的值是多少呢？）答案是`50%`；
+>- 3.当`Old Gen`超过了`CMSInitiatingOccupancyFraction`配置的大小时，当`CMSInitiatingOccupancyFraction`参数配置值小于0时（注意，默认是 -1），是 “((100 - MinHeapFreeRatio) + (double)(tr * MinHeapFreeRatio) / 100.0) / 100.0”，不配置公式中的影响参数的情况下，默认是92%；
+>- 4.如果未超过上面的阈值条件，并且未设置`UseCMSInitiatingOccupancyOnly`，当`Old Gen`刚因为对象分配空间而进行扩容，且成功分配空间，这时会考虑进行一次`CMS GC`或者根据是否使用自适应`空闲chunk`链表并且分配失败来触发；
+>- 5.根据增量`GC`是否可能会失败，通过判断当前`Old Gen`剩余的空间大小是否足够容纳`Young GC`晋升的对象大小。`Young GC`到底要晋升多少是无法提前知道的，因此，这里通过统计平均每次`Young GC`晋升的大小和当前`Young GC`可能晋升的最大大小来进行比较；
+>- 6.根据`metaspace`情况判断，如果配置了`CMSClassUnloadingEnabled`参数，如果`metaspace`申请空间失败触发；
+
 #### 14.什么情况下才选择使用CMS收集器呢？
 
 >- 堆太小，如果不是对延迟有特别高的需求，不建议使用CMS，主要是由于CMS的几个缺点导致的：（1）并发周期的触发比例不好设置；（2）抢占CPU时间；（3）担保判断导致YGC变慢；（4）碎片问题。
