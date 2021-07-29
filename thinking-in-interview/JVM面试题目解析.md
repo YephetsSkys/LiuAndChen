@@ -742,39 +742,39 @@ jstat [ option vmid [interval[s|ms] [ccount]] ]
 
 #### 3.Java OOM一共有多少种？
 
-- 1) java.lang.OutMemoryError:Java heap space
+- ***java.lang.OutMemoryError:Java heap space***
 
 这个是最常见的OOM了，指堆空间大小已经达到了设置的最大内存值。这个时候应该使用`jmap`、`MAT`或者`VM`去定位是否是内存溢出。如果一切正常，则需要调整`-Xmx`的值。
 
-- 2) java.lang.StackOverflowError
+- ***java.lang.StackOverflowError***
 
 这个也是比较常见的，通常在递归调用造成栈空间不足的时候会报错。结合jstack检查运行时堆栈信息或者调整`-Xss`的大小。
 
-- 3) java.lang.OutMemoryError:GC overhead limit exceeded
+- ***java.lang.OutMemoryError:GC overhead limit exceeded***
 
 这个错误是由于JVM花费太长时间执行GC且只能回收很少的堆内存时抛出的。默认情况下，如果Java进程花费98%以上的时间执行GC，并且每次只有不到2%的堆被恢复，则JVM抛出此错误。换句话说，这意味着我们的应用程序几乎耗尽了所有可用内存，垃圾收集器花了太长时间试图清理它，并多次失败。这个问题还是堆内内存溢出或者空间太小造成的，解决办法还是排除内存泄露或者增大堆空间，或者干脆关闭掉此提示`-XX:-UseGCOverheadLimit`(治标不治本)。
 
-- 4) java.lang.OutMemoryError:unable to create new native thread
+- ***java.lang.OutMemoryError:unable to create new native thread***
 
 这个意思是没有足够的内存空间给线程分配java栈，也许是忘记线程池`shutdown`或者是主机内存真的太小了。如果排查一切都正常，JVM方面可以通过指定`-Xss`来减少单个`thread stack`的大小。另外也可以在系统层面，可以通过修改`/etc/security/limits.conf`中的`nofile`和`nproc`来增大os对线程的限制。
 
-- 5) java.lang.OutOfMemoryError: Requested array size exceeds VM limit
+- ***java.lang.OutOfMemoryError: Requested array size exceeds VM limit***
 
 “请求的数组大小超出 VM 限制”表明应用程序试图分配大于堆大小的数组。例如，如果应用程序尝试分配 512MB 的数组，但最大堆大小为 256MB，则会抛出此错误。
 
-- 6)  java.lang.OutOfMemoryError: Metaspace
+- ***java.lang.OutOfMemoryError: Metaspace***
 
 Java元空间大小超过了`-XX:MaxMetaSpaceSize`设置的大小会抛出此错误，可以尝试增加此配置。
 
-- 7)  java.lang.OutOfMemoryError: request size bytes for reason. Out of swap space?
+- ***java.lang.OutOfMemoryError: request size bytes for reason. Out of swap space?***
 
 当来自本机堆的分配失败并且本机堆可能接近耗尽时，Java HotSpot VM 代码会报告此明显异常。该消息指示失败的请求的大小（以字节为单位）以及内存请求的原因。当抛出此错误消息时，VM 调用致命错误处理机制（即，它生成一个致命错误日志文件，其中包含有关崩溃时线程、进程和系统的有用信息）。在本机堆耗尽的情况下，日志中的堆内存和内存映射信息可能很有用。
 
-- 8) java.lang.OutOfMemoryError: Compressed class space
+- ***java.lang.OutOfMemoryError: Compressed class space***
 
 如果JVM参数配置`-XX:+UseCompressedOops`和`-XX:+UseCompressedClassPointers`后，默认`CompressedClassSpaceSize`配置为1G，如果`UseCompressedClassPointers`所需的空间超过`CompressedClassSpaceSize`则会报出此错误。可以尝试增加`CompressedClassSpaceSize`的大小。
 
-- 9) java.lang.OutOfMemoryError: reason stack_trace_with_native_method
+- ***java.lang.OutOfMemoryError: reason stack_trace_with_native_method***
 
 如果错误消息的详细部分是“reason stack_trace_with_native_method”，并且打印了堆栈跟踪，其中顶部帧是本机方法，那么这表明本机方法遇到了分配失败。分配失败是在 Java 本机接口 (JNI) 或本机方法中而不是在 JVM 代码中检测到的。
 
