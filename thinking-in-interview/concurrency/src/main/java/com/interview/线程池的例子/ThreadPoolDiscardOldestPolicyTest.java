@@ -1,7 +1,5 @@
 package com.interview.线程池的例子;
 
-import com.google.common.util.concurrent.ThreadFactoryBuilder;
-
 import java.util.concurrent.*;
 
 /**
@@ -28,10 +26,10 @@ public class ThreadPoolDiscardOldestPolicyTest {
     //这个时候最大线程是10，非核心线程数还有6个，这时候会开6个线程去执行，目前达到10个最大线程数，此时队列里面最大只能存放9个，
     //还有一个Runnable，丢弃阻塞队列中靠最前的任务，并执行当前任务
 
-    private static ThreadFactory nameFactory = new ThreadFactoryBuilder()
+    private static ThreadFactory nameFactory = null;/*new ThreadFactoryBuilder()
             .setNameFormat("liumantest-pool-%d")
             .setDaemon(false)
-            .build();
+            .build();*/
 
 
     static {
