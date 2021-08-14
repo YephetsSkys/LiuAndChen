@@ -115,7 +115,15 @@ Java内存模型规定了所有的变量都存储在主内存中，每条线程�
 
 上层的ClassLoader无法访问底层的ClassLoader所加载的类。JDK提供了一个方法： Thread.setContextClassLoader()可以解决这个问题。
 
-#### 11.ClassLoader类加载器重要的4个方法介绍一下。
+#### 11.双亲委派机制的好处是什么？
+
+采用双亲委派模式的是好处是Java类随着它的类加载器一起具备了一种带有优先级的层次关系，通过这种层级关可以避免类的重复加载，当父亲已经加载了该类时，就没有必要子ClassLoader再加载一次。其次是考虑到安全因素，java核心api中定义类型不会被随意替换，假设通过网络传递一个名为java.lang.Integer的类，通过双亲委托模式传递到启动类加载器，而启动类加载器在核心Java API发现这个名字的类，发现该类已被加载，并不会重新加载网络传递的过来的java.lang.Integer，而直接返回已加载过的Integer.class，这样便可以防止核心API库被随意篡改。
+
+双亲委派机制的作用总结为：
+- 防止重复加载同一个.class。通过委托去向上面问一问，加载过了，就不用再加载一遍。保证数据安全。
+- 保证核心.class不能被篡改。通过委托方式，不会去篡改核心.clas，即使篡改也不会去加载，即使加载也不会是同一个.class对象了。不同的加载器加载同一个.class也不是同一个Class对象。这样保证了Class执行安全。
+
+#### 12.ClassLoader类加载器重要的4个方法介绍一下。
 
 1.public Class<?> loadClass(String name) throws ClassNotFoundException
 
@@ -133,7 +141,7 @@ Java内存模型规定了所有的变量都存储在主内存中，每条线程�
 
 查找一个类，这是一个受保护的方法，也是重载ClassLoader时，重要的系统扩展点。这个方法会在loadClass()时被调用，用于自定义查找类的逻辑。如果不需要修改类加载默认机制，只是想改变类加载的形式，就可以重载该方法。
 
-#### 12.JVM内存为什么要分成新生代，老年代，持久代（元空间）？
+#### 13.JVM内存为什么要分成新生代，老年代，持久代（元空间）？
 
 分代主要是根据每一块内存区间的特点，使用不同的回收算法，以提高垃圾回收的效率。
 
@@ -141,13 +149,13 @@ Java内存模型规定了所有的变量都存储在主内存中，每条线程�
 
 当对象回收多次依然存活，就被存放到老年代，如果老年代依然使用复制算法，那么将需要复制大量的对象，回收的性价比太低了，肯定这种做法是不可取的，。根据分代的思想，可以对老年代的回收使用与新生代不同的标记-压缩/清除算法，以提高垃圾回收效率。
 
-#### 13.新生代中为什么要分为Eden和Survivor？为什么要设置两个Survivor区？
+#### 14.新生代中为什么要分为Eden和Survivor？为什么要设置两个Survivor区？
 
 >- 如果没有Survivor，Eden区每进行一次Minor GC，存活的对象就会被送到老年代。老年代很快被填满，触发Major GC老年代的内存空间远大于新生代，进行一次Full GC消耗的时间比Minor GC长得多,所以需要分为Eden和Survivor。
 >- Survivor的存在意义，就是减少被送到老年代的对象，进而减少Full GC的发生，Survivor的预筛选保证，只有经历15次(此值是极端情况下，不准确)Minor GC还能在新生代中存活的对象，才会被送到老年代。
 >- 设置两个Survivor区最大的好处就是解决了碎片化，刚刚新建的对象在Eden中，经历一次Minor GC，Eden中的存活对象就会被移动到第一块survivor space S0，Eden被清空；等Eden区再满了，就再触发一次Minor GC，Eden和S0中的存活对象又会被复制送入第二块survivor space S1（这个过程非常重要，因为这种复制算法保证了S1中来自S0和Eden两部分的存活对象占用连续的内存空间，避免了碎片化的发生）。
 
-#### 14.引起类加载操作的五个行为？
+#### 15.引起类加载操作的五个行为？
 
 >- 1.遇到new、getstatic、putstatic、或invokestatic这4条字节码指令时；
 >- 2.使用java.lang.reflect包的方法对类进行反射调用的时候；
@@ -155,7 +163,7 @@ Java内存模型规定了所有的变量都存储在主内存中，每条线程�
 >- 4.当虚拟机启动的时候，用户需要指定一个要执行的主类，虚拟机会先初始化这个主类；
 >- 5.当使用`invokedynamic`指令的时候，如果一个MethodHandle实例最后的解析结果`REF_getStatic`、`REF_putStatic`、`REF_invokeStatic`的方法句柄，并且这个方法句柄所对应的类没有进行初始化，则需要先触发其初始化；
 
-#### 15.Java对象创建时机？
+#### 16.Java对象创建时机？
 
 >- 1.使用new关键字创建对象；
 >- 2.使用Class类的newInstance方法(反射机制)；
@@ -163,7 +171,7 @@ Java内存模型规定了所有的变量都存储在主内存中，每条线程�
 >- 4.使用Clone方法创建对象；
 >- 5.使用(反)序列化机制创建对象；
 
-#### 16.说说你知道的几种主要的JVM参数？
+#### 17.说说你知道的几种主要的JVM参数？
 
 1) 堆栈配置相关
 
@@ -210,7 +218,7 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 
 打印相关的GC日志等信息或输出OOM内存堆信息
 
-#### 17.请说说对象头的组成？
+#### 18.请说说对象头的组成？
 
 对象在内存中存储的布局可以分为三块区域：对象头（Header）、实例数据（Instance Data）和对齐填充（Padding）；
 
@@ -318,7 +326,7 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 
 上面展示了对象头在64位虚拟机中的一个数据结构。
 
-#### 18.对象的分配规则？
+#### 19.对象的分配规则？
 
 >- 1.首选判断是否支持栈上分配，支持则直接将对象属性打散并分配到栈上（需要开启`-XX:+DoEscapeAnalysis`、`-XX:+EliminateAllocations`）。
 >- 2.其次判断是否是大对象，超过JVM配置`-XX:PretenureSizeThreshold=N`的值，则直接分配到老年代。
@@ -326,7 +334,7 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 
 参考img下的***对象分配流程图.png***
 
-#### 19.对象如何晋升到老年代？
+#### 20.对象如何晋升到老年代？
 
 >- 1.对象年龄到期晋升，根据参数`-XX:MaxTenuringThreshold`设置的年龄来晋升到老年代，此值默认是15，对象头是有4bit记录的对象的年轻（4bit最大也就是15）。
 >- 2.如果一个对象占用超过`-XX:PretenureSizeThreshold`值的时候会直接分配到老年代，默认是0也就是不指定大小。此参数只能跟`-XX:+UseSerialGC`和`-XX:+UseParNewGC`配合使用。
@@ -335,11 +343,11 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 >- 5.分配的对象大于Eden区，则直接进入老年代。
 >- 6.Eden剩余空间不足分配且分配的对象大小大于Eden区的一半，并且垃圾收集器使用的是`-XX:+UseParallelGC`、`-XX:+UseParallelOldGC`、`-XX:+UseG1GC`这三种，则对象分配到老年代，不触发Minor GC。
 
-#### 20.到底多大的对象会被直接扔到老年代？
+#### 21.到底多大的对象会被直接扔到老年代？
 
 参考上题的5,6项。
 
-#### 21.Object obj = new Object()在内存中占用多少字节？
+#### 22.Object obj = new Object()在内存中占用多少字节？
 
 在32位虚拟机，markword(4字节)+元数据指针(4字节) + obj这个指针(4字节) = 12字节。
 
@@ -349,7 +357,7 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 
 指针压缩技术对Class对象指针，本地变量，堆栈元素，入参，返回值，NULL指针不会被压缩，并且堆大小不能***超过32G***。
 
-#### 22.Java对象在内存中的存储布局（64位开启指针压缩）
+#### 23.Java对象在内存中的存储布局（64位开启指针压缩）
 
 | 普通对象 | 数组对象 |
 | --- | --- |
@@ -359,11 +367,11 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 | 对齐填充 | 实例数据 |
 | | 对齐填充 |
 
-#### 23.Class对象默认情况下是存在Heap里面还是Perm中（JDK8一律分配在Heap中）？
+#### 24.Class对象默认情况下是存在Heap里面还是Perm中（JDK8一律分配在Heap中）？
 
 Class对象默认分配在Heap中，JDK8之前如果我们设置了`-XX:+UnlockDiagnosticVMOptions`，`-XX:+JavaObjectsInPerm`这两个参数，那将分配在Perm里。其实也没啥用，主要是为了分析查找问题等。
 
-#### 24.volatile的实现原理？
+#### 25.volatile的实现原理？
 
 1.Java源码
 
@@ -383,7 +391,7 @@ MESI(多CPU缓存的一致性和可见性，其实就是缓存过期策略通知
 
 通过一些测试代码，再加上`java -XX:+UnlockDiagnosticVMOptions -XX:+PrintAssembly`打印JVM编译的汇编码。可以看到volatile和synchronized等都是使用底层CPU的Lock指令。
 
-#### 25.你知道Java虚拟机的TLAB吗？跟我讲一讲？
+#### 26.你知道Java虚拟机的TLAB吗？跟我讲一讲？
 
 TLAB全程叫Thread Local Allocation Buffer，也即线程本地分配缓冲。这部分Buffer是从堆中划分出来的，但是是本地线程独享的。可以被其他线程读取，但是不能被其他线程写入。
 
@@ -412,7 +420,7 @@ TLAB是虚拟机在堆内存的eden划分出来的一块专用空间，是线程
 `-XX:TLABSize`选项为指定TLAB的大小，这个选项一般不需要设置，会自动根据`-XX:TLABWasteTargetPercent`来赋予初始值，并且会自动调整TLAB的大小；<br>
 `-XX:MinTLABSize`选项是指最小TLAB的值，默认为2048；<br>
 
-#### 26.你知道栈上分配吗？说说什么情况下会影响栈上分配？
+#### 27.你知道栈上分配吗？说说什么情况下会影响栈上分配？
 
 JVM对于这种情况可以通过开启逃逸分析参数(`-XX:+DoEscapeAnalysis`)来优化对象内存分配位置，使其通过标量替换优先分配在栈上。通过逃逸分析确定该对象不会被外部访问，并且对象可以被进一步分解时，JVM不会创建该对象，而是将该对象成员变量分解若干个被这个方法使用的成员变量所代替，这些代替的成员变量在栈帧或寄存器上分配空间，这样就不会因为没有一大块连续空间导致对象内存不够分配。开启标量替换参数(`-XX:+EliminateAllocations`)。
 
@@ -426,13 +434,13 @@ JVM对于这种情况可以通过开启逃逸分析参数(`-XX:+DoEscapeAnalysis
 - 5) `XX:MaxInlineSize=35`和`-XX:FreqInlineSize=325`两个参数也会影响。第一个参数表示JVM字节码大小低于35byte的方法始终内联，第二个参数表示如果是热点方法，则大小低于325的方法将被内联； Larger methods are never inlined。
 - 6) 其他相关的内联参数和标量参数，可以通过命令获取`java -XX:+PrintFlagsFinal -version |grep 'Eliminate\|inline' -i`。
 
-#### 27.什么情况下会发生栈内存溢出？
+#### 28.什么情况下会发生栈内存溢出？
 
 - 1) 栈是线程私有的，栈的生命周期和线程一样，每个方法在执行的时候就会创建一个栈帧，它包含局部变量表、操作数栈、动态链接、方法出口等信息，局部变量表又包括基本数据类型和对象的引用；
 - 2) 当线程请求的栈深度超过了虚拟机允许的最大深度时，会抛出StackOverFlowError异常，方法递归调用肯可能会出现该问题；
 - 3) 调整参数-xss去调整jvm栈的大小。
 
-#### 28.JVM中的指针压缩原理？
+#### 29.JVM中的指针压缩原理？
 
 指针压缩主要涉及到三个JVM参数：
 >- CompressedClassSpaceSize：使用压缩的类指针时，Metaspace中的类区域的最大大小，默认1G(最大不能超过3G)。查看真正占用大小可以使用命令`jcmd pid GC.heap_info`。
