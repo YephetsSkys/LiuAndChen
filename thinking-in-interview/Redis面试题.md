@@ -16,26 +16,14 @@ Redis作为一个内存数据库有以下优势：
 >- 可以用作分布式锁；
 >- 可以作为消息中间件使用，支持发布订阅。
 
-#### 2.Redis的五种数据类型
-
-Redis内部使用一个redisObject对象来表示所有的key和value，其中属性type表示一个value对象具体是何种数据类型，encoding是不同数据类型在Redis内部的存储方式。比如type=string表示value存储的是一个普通字符串，那么encoding可以是raw或者int。
-
-下面是5种数据类型的介绍：
-
-- string: redis最基本的类型，value不仅是string，也可以是数字。string类型是二进制安全的，意思是redis的string类型可以包含任何数据，比如jpg图片或者序列化的对象。string类型的值最大能存储512M；
-- hash: 是一个键值（key-value）的集合。redis的hash是一个string的key和value的映射表，Hash特别适合存储对象。常用命令：hget,hset,hgetall等。应用场景如用户的属性信息等；
-- list：列表类型，可以理解成是可变长数据，按照插入顺序排序。可以添加一个元素到列表的头部（左边）或者尾部（右边） 常用命令：lpush、rpush、lpop、rpop、lrange(获取列表片段)等。应用场景非常多，如粉丝列表，关注列表等；redis list的是实现是一个双向链表，支持反向查找和遍历，更方便操作，不过带来了额外的内存开销。
-- set：string类型的无序集合。集合是通过hashtable实现的。set中的元素是没有顺序的，而且是没有重复的。redis set对外提供的功能和list一样是一个列表，特殊之处在于set是自动去重的，而且set提供了判断某个成员是否在一个set集合中；
-- zset：set一样是string类型元素的集合，且不允许重复的元素，支持排序功能；通过用户额外提供一个优先级（score）的参数来为成员排序，并且是插入有序的，即自动排序。当你需要一个有序的并且不重复的集合列表，那么可以选择sorted set结构。和set相比，sorted set关联了一个double类型权重的参数score，使得集合中的元素能够按照score进行有序排列，redis正是通过分数来为集合中的成员进行从小到大的排序。内部使用HashMap和跳跃表(skipList)来保证数据的存储和有序，HashMap里放的是成员到score的映射，而跳跃表里存放的是所有的成员，排序依据是HashMap里存的score，使用跳跃表的结构可以获得比较高的查找效率，并且在实现上比较简单。
-
-#### 3.Redis是单线程的，为什么还能这么快吗？
+#### 2.Redis是单线程的，为什么还能这么快吗？
 
 - Redis完全基于内存，绝大部分请求是纯粹的内存操作，非常迅速，数据存在内存中，类似于HashMap，HashMap的优势就是查找的操作的时间复杂度是O(1)；
 - 数据结构简单，对数据操作也简单；
 - 采用单线程，避免了不必要的上下文切换和竞争条件，不存在多线程导致的CPU切换，不用去考虑各种锁的问题，不存在加锁释放锁操作，没有死锁问题导致的性能消耗；
 - 使用多路复用非阻塞IO模型。
 
-#### 4.Redis和Memcached的区别？
+#### 3.Redis和Memcached的区别？
 
 1. 存储方式上：memcache会把数据全部存在内存之中，断电后会挂掉，数据不能超过内存大小。redis有部分数据存在硬盘上，这样能保证数据的持久性。
 2. 数据支持类型上：memcache对数据类型的支持简单，只支持简单的key-value，，而redis支持五种数据类型。
@@ -43,7 +31,7 @@ Redis内部使用一个redisObject对象来表示所有的key和value，其中�
 4. value的支持大小：redis可以达到512M，而memcache只有1MB(page)。
 5. 内存分配上：redis使用多大内存就分配多大内存，而memcache在启动的时候会给每个page再切分成chunk，来一个数据占用一个chunk，会造成一些内存浪费。
 
-#### 5.Redis的内存淘汰策略
+#### 4.Redis的内存淘汰策略
 
 内存淘汰之前redis有个内存过期策略。Redis使用的是定期删除+惰性删除策略。
 
@@ -55,7 +43,7 @@ Redis内部使用一个redisObject对象来表示所有的key和value，其中�
 
 不是的，如果定期删除没删除key。然后你也没即时去请求key，也就是说惰性删除也没生效。这样，redis的内存会越来越高。那么就应该采用内存淘汰机制。
 
-#### 6.Redis有几种键淘汰策略？
+#### 5.Redis有几种键淘汰策略？
 
 Redis有六种淘汰策略
 
@@ -70,7 +58,7 @@ Redis有六种淘汰策略
 
 Redis4.0加入了LFU(least frequency use)淘汰策略，包括volatile-lfu和allkeys-lfu，通过统计访问频率，将访问频率最少，即最不经常使用的KV淘汰。
 
-#### 7.Redis数据持久化
+#### 6.Redis数据持久化
 
 redis为了保证效率，数据缓存在了内存中，但是会周期性的把更新的数据写入磁盘或者把修改操作写入追加的记录文件中，以保证数据的持久化。
 
@@ -82,7 +70,7 @@ Redis默认是快照RDB的持久化方式。当Redis重启的时候，它会优�
 
 持久化策略可以禁用，两种策略也可以共存。
 
-#### 8.RDB是怎么工作的？
+#### 7.RDB是怎么工作的？
 
 默认Redis是会以快照"RDB"的形式将数据持久化到磁盘的一个二进制文件dump.rdb。工作原理简单说一下：当Redis需要做持久化时，Redis会fork一个子进程，子进程将数据写到磁盘上一个临时RDB文件中。当子进程完成写临时文件后，将原来的RDB替换掉，这样的好处是可以copy-on-write。
 
@@ -91,7 +79,7 @@ RDB的缺点是：RDB容易造成数据的丢失。如果你需要尽量避免�
 
 所以Redis4.0提供了混合持久化，提供了RDB+AOF的混合模式，在RDF备份的时候，会将这段时间发生的操作记录到AOF日志中。在恢复重启的时候，先加载RDB快照，然后再重放增量的AOF日志，重启效率因为得到大幅提升。
 
-#### 9.AOF日志
+#### 8.AOF日志
 
 使用AOF做持久化，每一个写命令都通过write函数追加到appendonly.aof中。
 
@@ -99,7 +87,147 @@ AOF可以做到全程持久化，只需要在配置中开启 appendonly yes。�
 
 使用AOF的优点是会让redis变得非常耐久。可以设置不同的fsync策略，aof的默认策略是每秒钟fsync一次，在这种配置下，就算发生故障停机，也最多丢失一秒钟的数据。缺点是对于相同的数据集来说，AOF的文件体积通常要大于RDB文件的体积。根据所使用的fsync策略，AOF的速度可能会慢于RDB。而在禁止fsync的情况下速度可以达到RDB的水平。
 
-### 二、Redis故障处理与工具介绍
+### 二、Redis数据类型
+
+#### 1.Redis的五种数据类型
+
+Redis内部使用一个redisObject对象来表示所有的key和value，其中属性type表示一个value对象具体是何种数据类型，encoding是不同数据类型在Redis内部的存储方式。比如type=string表示value存储的是一个普通字符串，那么encoding可以是raw或者int。
+
+下面是5种数据类型的介绍：
+
+- string: redis最基本的类型，value不仅是string，也可以是数字。string类型是二进制安全的，意思是redis的string类型可以包含任何数据，比如jpg图片或者序列化的对象。string类型的值最大能存储512M；
+- hash: 是一个键值（key-value）的集合。redis的hash是一个string的key和value的映射表，Hash特别适合存储对象。常用命令：hget,hset,hgetall等。应用场景如用户的属性信息等；
+- list：列表类型，可以理解成是可变长数据，按照插入顺序排序。可以添加一个元素到列表的头部（左边）或者尾部（右边） 常用命令：lpush、rpush、lpop、rpop、lrange(获取列表片段)等。应用场景非常多，如粉丝列表，关注列表等；redis list的是实现是一个双向链表，支持反向查找和遍历，更方便操作，不过带来了额外的内存开销。
+- set：string类型的无序集合。集合是通过hashtable实现的。set中的元素是没有顺序的，而且是没有重复的。redis set对外提供的功能和list一样是一个列表，特殊之处在于set是自动去重的，而且set提供了判断某个成员是否在一个set集合中；
+- zset：set一样是string类型元素的集合，且不允许重复的元素，支持排序功能；通过用户额外提供一个优先级（score）的参数来为成员排序，并且是插入有序的，即自动排序。当你需要一个有序的并且不重复的集合列表，那么可以选择sorted set结构。和set相比，sorted set关联了一个double类型权重的参数score，使得集合中的元素能够按照score进行有序排列，redis正是通过分数来为集合中的成员进行从小到大的排序。内部使用HashMap和跳跃表(skipList)来保证数据的存储和有序，HashMap里放的是成员到score的映射，而跳跃表里存放的是所有的成员，排序依据是HashMap里存的score，使用跳跃表的结构可以获得比较高的查找效率，并且在实现上比较简单。
+
+#### 2.String类型的字符是如何在Redis中存储的？
+
+> 编码方式
+
+字符串类型的内部编码有三种：
+- `int`：8字节的长整型；
+- `embstr`：小于等于44个字节的字符串；
+- `raw`：大于44个字节的字符串。
+
+> 编码转换
+
+- 当`int`数据不再是整数，变为`raw`；
+- 当`int`数据大小超过了`long`的范围(2^63-1)，变为`embstr`；
+- `embstr`数据长度超过`44`字节，变为`raw`；
+- 对`embstr`数据执行`append`命令，而非`set`重新赋值，变为`raw`。
+
+可以通过命令`Object encoding key`来查看内部的编码。<font color="blue">注：在3.2版本之后，则变成了44字节为分界，之前的是39字节。原因就是`sdshdr`的优化。</font>
+
+Redis内部字符串其底层实现是简单动态字符串`sds`(`simple dynamic string`)，是可以修改的字符串。它类似于Java中的ArrayList，它采用预分配冗余空间的方式来减少内存的频繁分配。
+
+当字符串长度小于`1M`时，扩容都是加倍现有的空间，如果超过`1M`，扩容时一次只会多扩`1M`的空间。(字符串最大长度为`512M`)
+
+`sds`本质上就是`char *`，因为有了表头`sdshdr`结构的存在，所以`sds`比传统C字符串在某些方面更加优秀，并且能够兼容传统C字符串。
+
+Redis自身实现的字符串结构有如下特点：
+- O(1)时间复杂度获取：字符串长度、已使用长度、未使用长度；
+- 可用于保存字节数组，支持安全的二进制数据存储；
+- 内部实现空间预分配机制，降低内存再分配次数；
+- 惰性删除机制：字符串缩减后的空间不释放，作为预分配空间保留。
+
+**总结下sds的特点是：可动态扩展内存、二进制安全、快速遍历字符串 和与传统的C语言字符串类型兼容。**
+
+绍SDS的具体结构如下：
+```
+struct __attribute__ ((__packed__)) sdshdr5 {
+    unsigned char flags; /* 3 lsb of type, and 5 msb of string length */
+    char buf[];
+};
+
+struct __attribute__ ((__packed__)) sdshdr8 {
+    uint8_t len; /* 已使用空间大小 */
+    uint8_t alloc; /* 总共可用的字符空间大小，应该是实际buf的大小减1(因为c字符串末尾必须是\0,不计算在内) */
+    unsigned char flags; /* 标志位，主要是识别这是sdshdr几，目前只用了3位，还有5位空余 */
+    char buf[]; /* 真正存储字符串的地方 */
+};
+
+struct __attribute__ ((__packed__)) sdshdr16 {
+    uint16_t len; /* used */
+    uint16_t alloc; /* excluding the header and null terminator */
+    unsigned char flags; /* 3 lsb of type, 5 unused bits */
+    char buf[];
+};
+
+struct __attribute__ ((__packed__)) sdshdr32 {
+    uint32_t len; /* used */
+    uint32_t alloc; /* excluding the header and null terminator */
+    unsigned char flags; /* 3 lsb of type, 5 unused bits */
+    char buf[];
+};
+
+struct __attribute__ ((__packed__)) sdshdr64 {
+    uint64_t len; /* used */
+    uint64_t alloc; /* excluding the header and null terminator */
+    unsigned char flags; /* 3 lsb of type, 5 unused bits */
+    char buf[];
+};
+```
+
+其中`sdshdr5`比较特殊外，其它的也只是`unsigned int`的位数不一样。
+
+由于`sds`的header共有`五种`，要想得到`sds`的header属性，就必须先知道header的类型，`flags`字段存储了header的类型。假如我们定义了`sds* s`（`s`变量指向`buf`属性），那么获取flags字段仅仅需要将s向前移动一个字节，即`unsigned char flags = s[-1]`。
+
+#### 3.为什么字符串要超过44字节使用raw编码呢？
+
+我们知道Redis中的所有的数据类型都是使用`RedisObject结构体`：
+```
+struct RedisObject { 
+    int4 type; // 4bits  类型
+    int4 encoding; // 4bits 存储格式
+    int24 lru; // 24bits 记录LRU信息
+    int32 refcount; // 4bytes 
+    void *ptr; // 8bytes，64-bit system 
+} robj;
+```
+
+不同的对象具有不同的类型`type(4bit)`，同一个类型的`type`会有不同的存储形式`encoding(4bit)`。为了记录对象的`LRU`信息，使用了`24bit`的`lru`来记录`LRU`信息。每个对象都有个引用计数`refcount`，当引用计数为零时，对象就会被销毁，内存被回收。`ptr`指针将指向`对象内容(body)`的具体存储位置。所以一个`RedisObject`对象头共需要占据`16`字节的存储空间。
+
+在RedisObject中，SDS的两种存储形式：
+```
+> set aaa abcdefghijklmnopqrstuvwxyz012345678912345678
+OK
+> debug object aaa
+Value at:0x7fec2de00370 refcount:1 encoding:embstr serializedlength:45 lru:5958906 lru_seconds_idle:1
+> set aaa abcdefghijklmnopqrstuvwxyz0123456789123456789
+OK
+> debug object aaa
+Value at:0x7fec2dd0b750 refcount:1 encoding:raw serializedlength:46 lru:5958911 lru_seconds_idle:1...
+```
+
+一个字符的差别，存储形式`encoding`就发生了变化。当长度小于`44`字节时使用`embstr`，超过`44`字节使用`raw`。
+
+![avatar](img/Redis字符串两种存储方式内存图.png)
+
+`embstr`存储形式是这样一种存储形式，它将`RedisObject`对象头和`SDS`对象连续存在一起，使用`malloc`方法一次分配。而`raw`存储形式不一样，它需要两次`malloc`，两个对象头在内存地址上一般是不连续的。
+
+在字符串比较小时，`SDS`对象头的大小是`capacity+3`——`SDS结构体的内存大小至少是3`。意味着分配一个字符串的最小空间占用为`19`字节`(16+3)`。
+
+如果总体超出了`64`字节，Redis认为它是一个大字符串，不再使用`embstr`形式存储，而改用`raw`形式。而`64-19-结尾的\0`，所以`embstr`只能容纳`44`字节。
+
+> Redis内存分配器
+
+Redis默认内存分配器采用`jemalloc`，可选的分配器还有：`libc`、`tcmalloc`。
+
+简单地说jemalloc将内存空间划分为三个部分：Small class、Large class、Huge class，每个部分又划分为很多小的内存块单位：
+- Small class: [8byte], [16byte, 32byte, … 128byte], [192byte, 256byte, … 512byte], [768byte, 1024byte, … 3840byte]
+- Large class: [4kb, 8kb, 12kb, … 4072kb]
+- Huge class: [4mb, 8mb, 12mb …]
+
+如果要给这个最小`19`字节分配内存，至少要分配一个`32`字节的内存。当然如果字符串长一点，再往下就可以分配到64字节的内存。以上这种形式被叫做：`embstr`，这种形式使得RedisObject和SDS内存地址是连续的。
+
+那么一旦大于`64`字节，形式就变成了`raw`，这种形式使得内存不连续，因为SDS已经变大，取得大的连续内存得不偿失。这就是为什么redis的`embstr`形式可以存储最大字符串长度是`44`字节的原因。
+
+#### 4.为什么从sc->scscadd简单的追加操作内部类型会从embstr->raw，如何解释？
+
+对`embstr`数据执行`append`命令，而非`set`重新赋值，则编码变为`raw`。因为如果`embstr`编码的value长度增加，`RedisObject`、`SDS`都需要`重新分配内存空间`。
+
+### 三、Redis故障处理与工具介绍
 
 #### 1.Redis运维命令info
 
