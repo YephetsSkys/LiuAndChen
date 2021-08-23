@@ -83,9 +83,41 @@ NIO的特点：事件驱动模型、单线程处理多任务、非阻塞I/O，I/
 
 Netty通过Reactor模型基于多路复用器接收并处理用户请求，内部实现了两个线程池，boss线程池和work线程池，其中boss线程池的线程负责处理请求的accept事件，当接收到accept事件的请求时，把对应的socket封装到一个NioSocketChannel中，并交给work线程池，其中work线程池负责请求的read和write事件，由对应的Handler处理。
 
->- 单线程模型：所有I/O操作都由一个线程完成，即多路复用、事件分发和处理都是在一个Reactor线程上完成的。既要接收客户端的连接请求,向服务端发起连接，又要发送/读取请求或应答/响应消息。一个NIO 线程同时处理成百上千的链路，性能上无法支撑，速度慢，若线程进入死循环，整个程序不可用，对于高负载、大并发的应用场景不合适。
->- 多线程模型：有一个NIO 线程（Acceptor） 只负责监听服务端，接收客户端的TCP 连接请求；NIO 线程池负责网络IO 的操作，即消息的读取、解码、编码和发送；1 个NIO 线程可以同时处理N 条链路，但是1 个链路只对应1 个NIO 线程，这是为了防止发生并发操作问题。但在并发百万客户端连接或需要安全认证时，一个Acceptor 线程可能会存在性能不足问题。
->- 主从多线程模型：Acceptor 线程用于绑定监听端口，接收客户端连接，将SocketChannel 从主线程池的Reactor 线程的多路复用器上移除，重新注册到Sub 线程池的线程上，用于处理I/O 的读写等操作，从而保证MainReactor只负责接入认证、握手等操作；
+**单线程模型**
+
+![avatar](img/netty单线程reactor.png)
+
+reactor 单线程模式是指所有的I/O操作都在一个NIO线程完成，该线程的职责：
+- 作为NIO服务端，接收客户端TCP连接。
+- 作为NIO客户端，向客户端发送TCP连接。
+- READ/WRITE 客户端的请求。
+
+> 不足：
+
+所有I/O操作都由一个线程完成，即多路复用、事件分发和处理都是在一个Reactor线程上完成的。既要接收客户端的连接请求,向服务端发起连接，又要发送/读取请求或应答/响应消息。一个NIO 线程同时处理成百上千的链路，性能上无法支撑，速度慢，若线程进入死循环，整个程序不可用，对于高负载、大并发的应用场景不合适。
+
+**多线程模型**
+
+![avatar](img/netty多线程reactor模型.png)
+
+reactor 多线程的实现最大的区别是拥有一个专门用来处理实际I/O 操作是线程池：
+- 拥有一个Acceptor 专门用来监听请求的I/O 类型
+- 使用专门线程池可以提高acceptor的并发量，并且可以将同一个SocketChannel 放于同一个I/O 线程处理，同一个I/O线程可以处理多个SocketChannel的READ/WRITE事件。
+
+> 不足：
+
+1个NIO线程可以同时处理N条链路，但是1个链路只对应1个NIO线程，这是为了防止发生并发操作问题。但在并发百万客户端连接或需要安全认证时，一个Acceptor线程可能会存在性能不足问题。
+
+**主从多线程模型**
+
+![avatar](img/netty主从reactor多线程模型.png)
+
+相比多线程reactor模型，主从reactor多线程模型拥有了一个独立处理 SocketChannel 连接的线程池，当客户端从Acceptor建立连接之后，便将该连接绑定到subreactor 线程池中的某个线程中，然后由该线程绑定客户端感兴趣的I/O事件（READ/WRITE），监听客户端连接请求，最后处理。
+
+- mainReactor : 监听 ServerSocketChannel 、建立与 SocketChannel 的连接、将完成建立连接之后的Socket 交给subReactor。
+- subReactor : 监听SocketChannel的 I/O事件，完成编解码、相应的业务处理（默认为CPU个数）。
+
+**Netty的线程模型可以通过配置不同参数实现不同reactor的线程模型（Netty4版本未发现多线程reactor版本实现方式）**
 
 #### 6.请讲讲什么是 Reactor 模式？
 
