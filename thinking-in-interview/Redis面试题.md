@@ -115,7 +115,83 @@ Redis内部使用一个redisObject对象来表示所有的key和value，其中�
 - set：string类型的无序集合。集合是通过hashtable实现的。set中的元素是没有顺序的，而且是没有重复的。redis set对外提供的功能和list一样是一个列表，特殊之处在于set是自动去重的，而且set提供了判断某个成员是否在一个set集合中；
 - zset：set一样是string类型元素的集合，且不允许重复的元素，支持排序功能；通过用户额外提供一个优先级（score）的参数来为成员排序，并且是插入有序的，即自动排序。当你需要一个有序的并且不重复的集合列表，那么可以选择sorted set结构。和set相比，sorted set关联了一个double类型权重的参数score，使得集合中的元素能够按照score进行有序排列，redis正是通过分数来为集合中的成员进行从小到大的排序。内部使用HashMap和跳跃表(skipList)来保证数据的存储和有序，HashMap里放的是成员到score的映射，而跳跃表里存放的是所有的成员，排序依据是HashMap里存的score，使用跳跃表的结构可以获得比较高的查找效率，并且在实现上比较简单。
 
-#### 2.String类型的字符是如何在Redis中存储的？
+#### 2.Redis的五种数据类型对应哪些编码方式？
+
+<table>
+	<tr>
+		<td>类型</td>
+		<td>编码方式</td>
+		<td>数据结构描述</td>
+		<td>变更规则</td>
+	</tr>
+	<tr>
+	    <td rowspan="3">string</td>
+	    <td>raw</td>
+	    <td>动态字符串编码</td>
+	    <td>字符长度超过44字节，从embstr转成raw</td>
+	</tr>
+	<tr>
+	    <td>embstr</td>
+	    <td>优化内存分配的字符串编码</td>
+	    <td>字符类型默认</td>
+	</tr>
+	<tr>
+	    <td>int</td>
+	    <td>整数编码</td>
+	    <td>8字节长整形，超过则适用44字节规则</td>
+	</tr>
+	<tr>
+	    <td rowspan="2">hash</td>
+	    <td>hashtable</td>
+	    <td>散列表编码</td>
+	    <td>当ziplist无法满足的时候使用此编码</td>
+	</tr>
+	<tr>
+	    <td>ziplist</td>
+	    <td>压缩列表编码</td>
+	    <td>当元素小于`hash-max-ziplist-entries`（默认`512`）、同时所有值都小于`hash-max-ziplist-value`配置（默认`64字节`）使用此编码</td>
+	</tr>
+	<tr>
+	    <td rowspan="3">list</td>
+	    <td>linkedlist</td>
+	    <td>双向列表编码</td>
+	    <td>当ziplist无法满足的时候使用此编码</td>
+	</tr>
+	<tr>
+	    <td>ziplist</td>
+	    <td>压缩列表编码</td>
+	    <td>当列表的元素个数小于`list-max-ziplist-entries`（默认`512`个）、同时列表中每个元素的值都小于`list-max-ziplist-value`（默认`64字节`），使用此编码，减少内存的使用</td>
+	</tr>
+	<tr>
+	    <td>quicklist</td>
+	    <td>3.2版本新的列表编码</td>
+	    <td>3.2之后，由于考虑到内存碎片，连续空间等问题，`quickList`是`zipList`和`linkedList`的混合体，它将`linkedList`按段切分，每一段使用`zipList`来紧凑存储，多个`zipList`之间使用双向指针串接起来。默认`list-max-ziplist-size=-2`（每个`quicklsit`节点上的`ziplist`大小不能超过`8kb`），`list-compress-depth=0`表示两端所有节点均不压缩。</td>
+	</tr>
+	<tr>
+	    <td rowspan="2">set</td>
+	    <td>hashtable</td>
+	    <td>散列表编码</td>
+	    <td>无法满足intset则使用此编码</td>
+	</tr>
+	<tr>
+	    <td>intset</td>
+	    <td>整数集合编码</td>
+	    <td>当集合中的元素都是整数且元素个数小于`set-max-intset-entries`（默认`512`个）</td>
+	</tr>
+	<tr>
+	    <td rowspan="2">zset</td>
+	    <td>skiplist</td>
+	    <td>跳跃表编码</td>
+	    <td>当ziplist无法满足的时候使用此编码</td>
+	</tr>
+	<tr>
+	    <td>ziplist</td>
+	    <td>压缩列表编码</td>
+	    <td>当有序集合的元素个数小于`zset-max-ziplist-entries`（默认128个）、同时每个元素的值都小于`zset-max-ziplist-value`（默认`64字节`）使用此编码</td>
+	</tr>
+</table>
+
+#### 3.String类型的字符是如何在Redis中存储的？
 
 > 编码方式
 
@@ -187,7 +263,7 @@ struct __attribute__ ((__packed__)) sdshdr64 {
 
 由于`sds`的header共有`五种`，要想得到`sds`的header属性，就必须先知道header的类型，`flags`字段存储了header的类型。假如我们定义了`sds* s`（`s`变量指向`buf`属性），那么获取flags字段仅仅需要将s向前移动一个字节，即`unsigned char flags = s[-1]`。
 
-#### 3.为什么字符串要超过44字节使用raw编码呢？
+#### 4.为什么字符串要超过44字节使用raw编码呢？
 
 我们知道Redis中的所有的数据类型都是使用`RedisObject结构体`：
 ```
@@ -237,7 +313,7 @@ Redis默认内存分配器采用`jemalloc`，可选的分配器还有：`libc`�
 
 那么一旦大于`64`字节，形式就变成了`raw`，这种形式使得内存不连续，因为SDS已经变大，取得大的连续内存得不偿失。这就是为什么redis的`embstr`形式可以存储最大字符串长度是`44`字节的原因。
 
-#### 4.为什么从sc->scscadd简单的追加操作内部类型会从embstr->raw，如何解释？
+#### 5.为什么从sc->scscadd简单的追加操作内部类型会从embstr->raw，如何解释？
 
 对`embstr`数据执行`append`命令，而非`set`重新赋值，则编码变为`raw`。因为如果`embstr`编码的value长度增加，`RedisObject`、`SDS`都需要`重新分配内存空间`。
 
