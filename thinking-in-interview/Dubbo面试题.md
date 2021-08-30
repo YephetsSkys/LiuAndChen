@@ -349,8 +349,8 @@ Dubbo框架内置了负载均衡的功能及扩展接口，我们可以透明地
 	<dubbo:method name="sayHello" async="true" />
 </dubbo:reference>
 ```
-----
-```java
+
+```
 //如何使用
 IHelloService helloService = (IHelloService)context.getBean("helloService");
 //此调用会立即返回null
@@ -538,6 +538,18 @@ com.alibaba.dubbo.remoting.RemotingException: Failed connect to server
 - Mysql数据库：查看慢查询日志、数据库的磁盘空间、排查索引是否缺失，或使用`show processlist`检查具体的SQL语句情况。
 
 ### 四、源码和原理
+
+#### 1.Dubbo协议是长链接的，当前A服务多个线程调B服务，是只建立一个链接吗。Dubbo怎么处理的？
+
+`Dubbo`默认情况下消费端与服务端只创建一个长连接。由于底层使用了netty的nio技术，不需要像BIO一样开启一个线程对应一个链接。（这里其实可能会紧跟着问NIO的知识 [传送门 - NIO/BIO/AIO区别](https://github.com/YephetsSkys/LiuAndChen/blob/master/thinking-in-interview/Netty%E9%9D%A2%E8%AF%95%E9%A2%98.md#4bionio%E5%92%8Caio%E7%9A%84%E5%8C%BA%E5%88%AB) ）
+
+`Dubbo`处理粘包和拆包是通过底层的Netty处理的，所以`Dubbo`不需要关注细节。[传送门 - TCP 粘包/拆包的原因及解决方法](https://github.com/YephetsSkys/LiuAndChen/blob/master/thinking-in-interview/Netty%E9%9D%A2%E8%AF%95%E9%A2%98.md#9tcp-%E7%B2%98%E5%8C%85%E6%8B%86%E5%8C%85%E7%9A%84%E5%8E%9F%E5%9B%A0%E5%8F%8A%E8%A7%A3%E5%86%B3%E6%96%B9%E6%B3%95)
+
+dubbo协议会为每个请求数据包设置一个不会重复的id，并且用一个Map存储id对应的Future，让发起调用的线程阻塞等待结果。服务端在响应数据包时，将请求id回写到数据包，客户端的单一长连接在接收到响应数据包时，根据请求id从Map中获取Future并写入值、将阻塞等待的发请调用的线程唤醒。
+
+#### 2.Dubbo客服端同步/异步调用的实现原理
+
+未完待续
 
 ### 五、面试连珠炮解析
 
