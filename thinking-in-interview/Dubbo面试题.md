@@ -549,7 +549,71 @@ dubbo协议会为每个请求数据包设置一个不会重复的id，并且用�
 
 #### 2.Dubbo客服端同步/异步调用的实现原理
 
-未完待续
+`Dubbo`客户端同步调用的逻辑是在`DefaultFuture`类中，虽然使用了NIO的方式进行长连接通信。但是通过对调用线程的阻塞和唤醒来达到同步调用。实际还是主动使用`CompletableFuture`的`get`机制。真正的代码在`AsyncRpcResult`的`get`方法中。
+
+```
+//AsyncToSyncInvoker
+
+public Result invoke(Invocation invocation) throws RpcException {
+    Result asyncResult = invoker.invoke(invocation);
+
+    try {
+        // 在这里如果是同步方式调用，则主动的执行get
+        if (InvokeMode.SYNC == ((RpcInvocation) invocation).getInvokeMode()) {
+            asyncResult.get(Integer.MAX_VALUE, TimeUnit.MILLISECONDS);
+        }
+    } catch (Throwable e) {
+        throw new RpcException(e.getMessage(), e);
+    }
+    return asyncResult;
+}
+```
+
+`Dubbo`客户端异步调用通过在设置返回值为`CompletableFuture`类或者显示设置了属性`async=true`，来实现异步调用，用户来主动的调用`get`来触发调用线程的阻塞。
+
+```
+// InvokerInvocationHandler
+
+@Override
+public Object invoke(Object proxy, Method method, Object[] args) throws Throwable {
+    // ...
+    // 这里调用了AsyncRpcResult的recreate方法
+    return invoker.invoke(rpcInvocation).recreate();
+}
+
+public Object recreate() throws Throwable {
+    RpcInvocation rpcInvocation = (RpcInvocation) invocation;
+    // 如果是Future模式，则返回一个Future对象
+    if (InvokeMode.FUTURE == rpcInvocation.getInvokeMode()) {
+        return RpcContext.getContext().getFuture();
+    }
+
+    return getAppResponse().recreate();
+}
+```
+
+`Dubbo`客户端当调用的是`Callback`方法时，`Consumer`端发送请求的同时暴露一个回调参数的服务，这样`Provider`返回结果的方式就变成了调用`Consumer`暴露的这个服务，也就是返回结果时`Provider`变成了`Consumer`。
+
+```
+// CallbackServiceCodec
+public static Object encodeInvocationArgument(Channel channel, RpcInvocation inv, int paraIndex) throws IOException {
+    // get URL directly
+    URL url = inv.getInvoker() == null ? null : inv.getInvoker().getUrl();
+    byte callbackStatus = isCallBack(url, inv.getProtocolServiceKey(), inv.getMethodName(), paraIndex);
+    Object[] args = inv.getArguments();
+    Class<?>[] pts = inv.getParameterTypes();
+    switch (callbackStatus) {
+        case CallbackServiceCodec.CALLBACK_CREATE: // 这里exportOrUnexportCallbackService就是暴露方法
+            inv.setAttachment(INV_ATT_CALLBACK_KEY + paraIndex, exportOrUnexportCallbackService(channel, url, pts[paraIndex], args[paraIndex], true));
+            return null;
+        case CallbackServiceCodec.CALLBACK_DESTROY:
+            inv.setAttachment(INV_ATT_CALLBACK_KEY + paraIndex, exportOrUnexportCallbackService(channel, url, pts[paraIndex], args[paraIndex], false));
+            return null;
+        default:
+            return args[paraIndex];
+    }
+}
+```
 
 ### 五、面试连珠炮解析
 
