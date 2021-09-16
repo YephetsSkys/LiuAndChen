@@ -37,4 +37,154 @@
 
 `itable`保存了接口方法在`itable`中的索引值以及方法入口。在方法调用`invokeinterface`指令的时候，首先先扫描`itableOffset`中此方法的索引值，最后通过索引值找到`itableMethod`的方法入口，并执行方法。
 
+#### 4.在有大量的判断的时候，为什么推荐使用switch而不是if？
+
+使用`if`判断，最坏情况是`O(n)`的时间复杂度。如果是字符串，在每次执行字符串比较的时候需要调用`equals()`方法，可能还会对字符串的内容会进行遍历操作。
+
+而使用`switch`的话，会被编译为两种指令，一种是`lookupswitch`和`tableswitch`：
+- `tableswitch`将栈顶部的int值直接用作表中的索引，以获取跳转目标并立即执行跳转。时间复杂度为O(1)操作，这意味着它的速度非常快；
+- `lookupswitch`将栈顶部的int值与表中的键进行比较，直到找到匹配项。可以理解为维护了一个kv的字典表，通过逐个比较key来查找匹配的待跳转的行数。而查找最好的性能是`O(log n)`。
+
+`tableswitch`字节码指令代码如下：
+```
+CASE(_tableswitch): {
+  jint* lpc  = (jint*)VMalignWordUp(pc+1);
+  int32_t  key  = STACK_INT(-1);
+  int32_t  low  = Bytes::get_Java_u4((address)&lpc[1]);
+  int32_t  high = Bytes::get_Java_u4((address)&lpc[2]);
+  int32_t  skip;
+  key -= low;
+  skip = ((uint32_t) key > (uint32_t)(high - low))
+              ? Bytes::get_Java_u4((address)&lpc[0])
+              : Bytes::get_Java_u4((address)&lpc[key + 3]);
+  // ...
+}
+```
+
+`lookupswitch`字节码指令代码如下：
+```
+CASE(_lookupswitch): {
+  jint* lpc  = (jint*)VMalignWordUp(pc+1);
+  int32_t  key  = STACK_INT(-1);
+  int32_t  skip = Bytes::get_Java_u4((address) lpc); /* default amount */
+  int32_t  npairs = Bytes::get_Java_u4((address) &lpc[1]);
+  while (--npairs >= 0) {
+      lpc += 2;
+      if (key == (int32_t)Bytes::get_Java_u4((address)lpc)) {
+          skip = Bytes::get_Java_u4((address)&lpc[1]);
+          break;
+      }
+  }
+  // ...
+}
+```
+
+
+**什么条件下`switch`被编译为`tableswitch`或`lookupswitch`？**
+
+我们查看`jdk.compiler/share/classes/com/sun/tools/javac/jvm/Gen.java`源码
+
+```
+long table_space_cost = 4 + ((long) hi - lo + 1); // words
+long table_time_cost = 3; // comparisons
+long lookup_space_cost = 3 + 2 * (long) nlabels;
+long lookup_time_cost = nlabels;
+int opcode =
+    nlabels > 0 &&
+    table_space_cost + 3 * table_time_cost <=
+    lookup_space_cost + 3 * lookup_time_cost
+    ?
+    tableswitch : lookupswitch;
+```
+
+这里可以看出，基本跟`switch`的选项以及最低值和最高值相关。如：`1,2,6`就会被编译为`lookupswitch`，而`1,2,5`会被编译为`tableswitch`。
+
+那`switch`又如何支持字符串比较的呢？我们通过下面代码看一下：
+```
+public static void main(String[] args) {
+    String s = "1";
+    switch(s) {
+        case "A":
+        case "B":
+        case "X":
+        default :
+    }
+}
+```
+
+看一下编译后的字节码指令：
+```
+  0 ldc #2 <1>
+  2 astore_1
+  3 aload_1
+  4 astore_2
+  5 iconst_m1
+  6 istore_3
+  7 aload_2
+  8 invokevirtual #3 <java/lang/String.hashCode>
+ 11 lookupswitch 3
+	65:  44 (+33)
+	66:  58 (+47)
+	88:  72 (+61)
+	default:  83 (+72)
+ 44 aload_2
+ 45 ldc #4 <A>
+ 47 invokevirtual #5 <java/lang/String.equals>
+ 50 ifeq 83 (+33)
+ 53 iconst_0
+ 54 istore_3
+ 55 goto 83 (+28)
+ 58 aload_2
+ 59 ldc #6 <B>
+ 61 invokevirtual #5 <java/lang/String.equals>
+ 64 ifeq 83 (+19)
+ 67 iconst_1
+ 68 istore_3
+ 69 goto 83 (+14)
+ 72 aload_2
+ 73 ldc #7 <X>
+ 75 invokevirtual #5 <java/lang/String.equals>
+ 78 ifeq 83 (+5)
+ 81 iconst_2
+ 82 istore_3
+ 83 iload_3
+ 84 tableswitch 0 to 2	0:  112 (+28)
+	1:  112 (+28)
+	2:  112 (+28)
+	default:  112 (+28)
+112 return
+```
+
+其实说白了，就是首先调用字符串的`hashCode()`方法后，通过`lookupswitch`来计算出值匹配的项后再通过`tableswitch`指令来执行具体的代码。将上面的代码翻译就是如下所示：
+```
+public static void main(String[] args) {
+    String s = "1";
+    int hashCode = s.hashCode();
+    int k = 0;
+    switch(s) {
+        case 44:
+            if("A".equals(s)) {
+                k = 0;
+            }
+        case 58:
+            if("B".equals(s)) {
+                k = 1;
+            }
+        case 72:
+            if("X".equals(s)) {
+                k = 2;
+            }
+        default :
+    }
+    switch(k) {
+        case 0:
+        case 1:
+        case 2:
+        default:
+    }
+}
+```
+
+字节码面前一切都暴露了，其实字符串的`switch`就是个语法糖，`javac`为我们承担了一切。
+
 **未完待续**
