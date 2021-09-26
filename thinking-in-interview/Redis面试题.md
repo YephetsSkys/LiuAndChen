@@ -505,6 +505,30 @@ Redis Sentinel最小配置是一主一从。Redis的Sentinel系统可以用来�
 - 6.Sentinel和其他Sentinel协商客观下线的主节点的状态，如果处于SDOWN状态，则投票自动选出新的主节点，将剩余从节点指向新的主节点进行数据复制。
 - 7.当没有足够数量的Sentinel同意主服务器下线时，主服务器的客观下线状态就会被移除。当主服务器重新向Sentinel的PING命令返回有效回复时，主服务器的主观下线状态就会被移除。
 
+#### 7.讲一下Redis Cluster实现原理
+
+`Redis Cluster`将所有数据划分为`16384`个槽位，每个节点负责其中一部分槽位，槽位的信息存储于每个节点中。
+
+当`Redis Cluster`的客户端来连接集群时，也会得到一份集群的配置信息。这样当客户端要查找某个key时，可以直接定位到目标节点。
+
+由于客户端缓存了槽位相关信息，可能会存在客户端与服务器存在槽位信息不一致的情况。当客户端向一个错误的节点发出指令后，该节点会发现指令的key所在的槽位并不归自己管理，则它会向客户端发送一个特殊的跳转指令(`MOVED`)携带目标操作的节点地址。客户端在收到`MOVED`指令后，会纠正自己错误的映射关系。
+
+`Redis Cluster`可以为每个主节点设置多个从节点，当主节点发生故障时，集群会自动将其中某个从节点设置为主节点。如果某个主节点没有从节点，那么当它发生故障时，集群将完全处于不可用状态。不过`Redis`也提供了一个参数`cluster-require-full-coverage`可以允许部分节点发生故障，其它节点哎可以继续提供对访问。
+
+槽位计算代码：
+```
+unsigned int keyHashSlot(char *key, int keylen) {
+    int s, e;
+    for (s = 0; s < keylen; s++)
+        if (key[s] == '{') break;
+    if (s == keylen) return crc16(key,keylen) & 0x3FFF;
+    for (e = s+1; e < keylen; e++)
+        if (key[e] == '}') break;
+    if (e == keylen || e == s+1) return crc16(key,keylen) & 0x3FFF;
+    return crc16(key+s+1,e-s-1) & 0x3FFF;
+}
+```
+
 ### 五、Redis相关连环炮面试解析
 
 `1.面试官：你先来说下redis是什么吧`
