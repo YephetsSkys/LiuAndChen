@@ -140,6 +140,40 @@ OK
 
 所以：**当设置了`maxmemory`+`maxmemory-policy`（如`volatile-lru`，`allkeys-lru`），对象共享池是禁用的。**
 
+#### 13.为什么Redis要缓存系统时间戳？
+
+因为每次获取系统时间戳都是一次系统调用，系统调用相对来说是比较费时间的，作为单线程的Redis承受不起，所以在`server.c`中定义了全局变量来缓存系统时间戳。
+
+默认Redis的时间戳每`1`毫秒更新一次，在定时任务`serverCron`里主动设置。
+
+```
+void initServer(void) {
+    //...
+    /* Create the timer callback, this is our way to process many background
+     * operations incrementally, like clients timeout, eviction of unaccessed
+     * expired keys and so forth. */
+    // 这里可以看到创建了一个定时器，每1毫秒执行一次
+    if (aeCreateTimeEvent(server.el, 1, serverCron, NULL, NULL) == AE_ERR) {
+        serverPanic("Can't create event loop timers.");
+        exit(1);
+    }
+    //...
+}
+
+int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
+    //...
+    /* Update the time cache. */
+    updateCachedTime();
+    //...
+}
+
+void updateCachedTime(void) {
+    time_t unixtime = time(NULL);
+    atomicSet(server.unixtime,unixtime);
+    server.mstime = mstime();
+}
+```
+
 ### 二、Redis数据类型
 
 #### 1.Redis的五种数据类型
