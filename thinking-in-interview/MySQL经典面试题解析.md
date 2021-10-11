@@ -587,6 +587,95 @@ truncate直接清空数据表数据并释放数据空间（可以理解为直接
 
 在MySQL 5.6版本中引入`eq_range_index_dive_limit`参数，默认值为`10`，通常业务在使用IN时会超过`10`个值，因此在MySQL 5.7版本中将默认阀值设为`200`。
 
+#### 7.下面SQL语句有加了limit 1性能反而差了？
+
+表语句如下：
+```
+CREATE TABLE `order_info` (
+  `id` bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+  `uid` int(11) unsigned,
+  `order_status` tinyint(3) DEFAULT NULL,
+  ... 省略其它字段和索引
+  PRIMARY KEY (`id`),
+  KEY `idx_uid_stat` (`uid`,`order_status`),
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+//SQL查询语句
+select * from order_info where uid = 5837661 order by id asc limit 1;
+```
+
+我们通过`Explain`可以看到走了`Primary`索引，而不是`idx_uid_stat`索引。通过查看优化器执行计划：
+```
+SET optimizer_trace="enabled=on";        // 打开 optimizer_trace
+SELECT * FROM order_info where uid = 5837661 order by id asc limit 1
+SELECT * FROM information_schema.OPTIMIZER_TRACE;    // 查看执行计划表
+SET optimizer_trace="enabled=off"; // 关闭 optimizer_trace
+```
+
+可以看到先选择了`idx_uid_stat`最后又选择了`Primary`：
+```
+{
+  "rows_estimation": [
+  {
+  "table": "`rebate_order_info`",
+  "range_analysis": {
+    "table_scan": {
+      "rows": 21155996,
+      "cost": 4.45e6    // 全表扫描成本
+    }
+  },
+  ...
+  "analyzing_range_alternatives": {
+      "range_scan_alternatives": [
+      {
+        "index": "idx_uid_stat",
+        "ranges": [
+        "5837661 <= uid <= 5837661"
+        ],
+        "index_dives_for_eq_ranges": true,
+        "rowid_ordered": false,
+        "using_mrr": false,
+        "index_only": false,
+        "rows": 255918,
+        "cost": 307103,            // 使用idx_uid_stat索引的成本
+        "chosen": true
+        }
+      ],
+   "chosen_range_access_summary": {    // 经过上面的各个成本比较后选择的最终结果
+     "range_access_plan": {
+         "type": "range_scan",
+         "index": "idx_uid_stat",  // 可以看到最终选择了idx_uid_stat这个索引来执行
+         "rows": 255918,
+         "ranges": [
+         "58376617 <= uid <= 58376617"
+         ]
+     },
+     "rows_for_plan": 255918,
+     "cost_for_plan": 307103,
+     "chosen": true
+     }
+} 
+...
+```
+
+主要原因是由于我们使用了`order by id asc`这种基于`id`的排序写法，优化器认为排序是个昂贵的操作，所以为了避免排序，并且它认为`limit n`的`n`如果很小的话即使使用全表扫描也能很快执行完，所以它**选择了全表扫描**，也就避免了`id`的排序。
+
+解决办法有两个：
+
+- 1.使用`force index`来强制使用指定的索引，如下：
+```
+select * from order_info force index(idx_uid_stat) where uid = 5837661 order by id asc limit 1
+```
+
+这种写法虽然可以，但不够优雅，如果这个索引被废弃了咋办？于是有了第二种比较优雅的方案。
+
+- 2.使用 order by (id+0) 方案，如下：
+```
+select * from order_info where uid = 5837661 order by (id+0) asc limit 1
+```
+
+这种方案也可以让优化器选择正确的索引，更推荐！因为虽然是按`id`排序的，但在`id`上作了加法这样耗时的操作(虽然只是加个无用的0，但足以骗过优化器)，优化器认为此时基于全表扫描会更耗性能，于是会选择基于成本大小的方式来选择索引。
+
 ## 七、复制与恢复相关
 
 #### 1.复制基本原理流程
