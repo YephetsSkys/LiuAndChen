@@ -863,6 +863,8 @@ mysqldump -A是表示备份所有数据库，并在备份文件中生成创建�
 | index | 扫描了索引树上的全部数据 |
 | all | 全表扫描 |
 
+**`type类型从快到慢：system > const > eq_ref > ref > range > index > ALL`**
+
 #### 3.profile的意义以及使用场景有哪些？
 
 profile 用来分析 sql 性能的消耗分布情况。当用 explain 无法解决慢 SQL 的时候，需要用profile 来对 sql 进行更细致的分析，找出 sql 所花的时间大部分消耗在哪个部分，确认 sql的性能瓶颈。
