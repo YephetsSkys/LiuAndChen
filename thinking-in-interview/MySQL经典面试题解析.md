@@ -844,7 +844,26 @@ mysqldump -A是表示备份所有数据库，并在备份文件中生成创建�
 | filtered | rows*filtered/100 表示该步骤最后得到的行数(估计值) |
 | Extra | 重要的补充信息 |
 
-#### 2.profile的意义以及使用场景有哪些？
+#### 2.explain中的type字段有哪些类型？
+
+[mysql5.7 explain 参考文档](https://dev.mysql.com/doc/refman/5.7/en/explain-output.html)
+
+| 名称 | 描述 |
+| --- | --- |
+| system | 该表只有一行（=系统表），这是 const 连接类型的特例。 |
+| const | 命中主键(primary key)或者唯一索引(unique)，被连接的部分是一个常量值(const) |
+| eq_ref | 在联表(join)查询的时候使用等值连接命中主键或者非空唯一索引 |
+| ref | 单表或连表的时候使用等值命中普通索引 |
+| fulltext | 使用了全文索引 |
+| ref_or_null | 使用`key_column=expr OR key_column IS NULL`命中(唯一或普通)索引 |
+| index_merge | 单表的查询基于范围查询使用到两个单独的索引可能会使用索引合并策略 |
+| unique_subquery | 子查询使用到唯一索引的情况下，`value in (SELECT id FROM a WHERE a='123%')` |
+| index_subquery | 子查询使用到普通索引的情况下，`value in (SELECT a FROM a WHERE a like '123%')` |
+| range | 索引上的范围查询 |
+| index | 扫描了索引树上的全部数据 |
+| all | 全表扫描 |
+
+#### 3.profile的意义以及使用场景有哪些？
 
 profile 用来分析 sql 性能的消耗分布情况。当用 explain 无法解决慢 SQL 的时候，需要用profile 来对 sql 进行更细致的分析，找出 sql 所花的时间大部分消耗在哪个部分，确认 sql的性能瓶颈。
 
@@ -856,7 +875,17 @@ show profile for query 19;		//查看sql的具体分析
 show profile ALL for query 19;		//查看sql相关的所有分析【主要看i/o与cpu,下边分析中有各项意义介绍】
 ```
 
-#### 3.统计过慢查询吗？对慢查询都怎么优化过？
+#### 4.如果查看mysql的执行计划相关的信息？
+
+使用如下语句可以打开执行优化器跟踪，来查看mysql如何进行索引选择等：
+```
+SET optimizer_trace="enabled=on";        // 打开 optimizer_trace
+SELECT * FROM order_info where uid = 5837661 order by id asc limit 1
+SELECT * FROM information_schema.OPTIMIZER_TRACE;    // 查看执行计划表
+SET optimizer_trace="enabled=off"; // 关闭 optimizer_trace
+```
+
+#### 5.统计过慢查询吗？对慢查询都怎么优化过？
 
 慢查询的优化首先要搞明白慢的原因是什么？是查询条件没有命中索引?是load了不需要的数据列？还是数据量太大？
 
@@ -869,13 +898,13 @@ show profile ALL for query 19;		//查看sql相关的所有分析【主要看i/o�
 ***数据量太大***
 查询的数据量太大，造成mysql需要扫描更多的数据页，并且占用大量的网络带宽来传递数据。可以考虑业务上的调整，或者是否是数据库查询的时候条件写错等原因。
 
-#### 4.mysql的慢sql排查，主要关注哪些字段？
+#### 6.mysql的慢sql排查，主要关注哪些字段？
 
 通过`Explain`语句来查看mysql执行计划。`Explain`最后输出字段请参看9.1小节。
 
 主要关注的字段有`type`、`key`、`key_len`、`rows`、`Extra`。其中`type`列显示扫描的类型，`key`列显示使用的是哪个索引，`key_len`列显示使用索引的数据长度（可以通过计算得出联合索引使用了几个字段）。`Extra`字段中会显示是否使用到临时表，是否使用文件排序等。
 
-#### 5.说一说你能想到的sql语句优化，至少五种？
+#### 7.说一说你能想到的sql语句优化，至少五种？
 
 >- 避免select *，将需要查找的字段列出来；
 >- 使用连接（join）来代替子查询；
@@ -887,7 +916,7 @@ show profile ALL for query 19;		//查看sql相关的所有分析【主要看i/o�
 >- 尽量使用常量来查询数据，减少多表连接；
 >- 可以使用union代替or查询；
 
-#### 6.说一说你能想到的表结构优化，至少五种？
+#### 8.说一说你能想到的表结构优化，至少五种？
 
 >- 尽可能使用not null定义字段(给空字段设置默认值)；
 >- 尽量少用text、blob等类型;
@@ -899,7 +928,7 @@ show profile ALL for query 19;		//查看sql相关的所有分析【主要看i/o�
 >- 使用Enum类型来代替一些字符串等；
 >- 把IP地址由varchar改成UNSIGNED INT类型；
 
-#### 7.什么时候是回表查询？回表的机制是什么？
+#### 9.什么时候是回表查询？回表的机制是什么？
 
 InnoDB有两大类索引，`聚集索引(clustered index)`和`普通索引(secondary index)`。InnoDB聚集索引的叶子节点存储行记录。InnoDB普通索引的叶子节点存储索引字段和主键值。
 
