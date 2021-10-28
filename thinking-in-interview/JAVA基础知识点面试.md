@@ -79,4 +79,124 @@ Thread::Thread() {
 
 这里可以看出通过`-XX:hashCode=n`来选择最底层`hashCode`的生成规则。默认情况下使用`Marsaglia's xor-shift 算法`。
 
+### 3.序列化与反序列化
+
+**为什么Java序列化要实现Serializable接口**
+
+我们可以查看序列化写入对象相关的代码，在`ObjectOutputStream`类的`writeObject0`方法：
+```
+private void writeObject0(Object obj, boolean unshared) throws IOException {
+    // ...
+    if (obj instanceof String) {
+       writeString((String) obj, unshared);
+    } else if (cl.isArray()) {
+       writeArray(obj, desc, unshared);
+    } else if (obj instanceof Enum) {
+       writeEnum((Enum<?>) obj, desc, unshared);
+    } else if (obj instanceof Serializable) {
+       writeOrdinaryObject(obj, desc, unshared);
+    } else {
+       if (extendedDebugInfo) {
+           throw new NotSerializableException(cl.getName() + "\n" + debugInfoStack.toString());
+       } else {
+           throw new NotSerializableException(cl.getName());
+       }
+    }
+    // ...
+}
+```
+
+这里可以看到，如果对象是`String`、`数组`、`枚举`以及实现了`Serializable`类型可以被正常序列化，否则会抛出`NotSerializableException`异常。
+
+**既然已经实现了`Serializable`接口，为什么还要显示指定`serialVersionUID`的值呢?**
+
+因为序列化对象时，如果**不显示的设置`serialVersionUID`，Java在序列化时会根据对象属性自动的生成一个`serialVersionUID`**，再进行存储或用作网络传输。
+
+在反序列化时，会根据对象属性**自动再生成一个新的`serialVersionUID`，和序列化时生成的`serialVersionUID`进行比对，两个`serialVersionUID`相同则反序列化成功，否则就会抛异常***。
+```
+Exception in thread "main" java.io.InvalidClassException: serial.User; local class incompatible: stream classdesc serialVersionUID = 8985745470054656491, local class serialVersionUID = -4967160969146043535
+	at java.base/java.io.ObjectStreamClass.initNonProxy(ObjectStreamClass.java:715)
+	...
+```
+
+具体代码在`ObjectInputStream`类的`readOrdinaryObject`方法：
+```
+private Object readOrdinaryObject(boolean unshared) throws IOException {
+    // ...
+    ObjectStreamClass desc = readClassDesc(false);
+    desc.checkDeserialize();
+    // ...
+}
+
+private ObjectStreamClass readClassDesc(boolean unshared) throws IOException {
+    // ...
+    byte tc = bin.peekByte();
+    ObjectStreamClass descriptor;
+    switch (tc) {
+        case TC_CLASSDESC:
+            descriptor = readNonProxyDesc(unshared);
+            break;
+    }
+    // ...
+}
+
+private ObjectStreamClass readNonProxyDesc(boolean unshared) throws IOException {
+    // ...
+    desc.initNonProxy(readDesc, cl, resolveEx, readClassDesc(false));
+    // ...
+}
+
+void initNonProxy(ObjectStreamClass model,
+                      Class<?> cl,
+                      ClassNotFoundException resolveEx,
+                      ObjectStreamClass superDesc) throws InvalidClassException {
+    // ...
+    // 这里如果获取到的suid不一致，会抛出异常
+    if (model.serializable == osc.serializable &&
+            !cl.isArray() &&
+            suid != osc.getSerialVersionUID()) {
+        throw new InvalidClassException(osc.name,
+                "local class incompatible: " +
+                        "stream classdesc serialVersionUID = " + suid +
+                        ", local class serialVersionUID = " +
+                        osc.getSerialVersionUID());
+    }
+    // ...
+}
+```
+
+而当显示的设置`serialVersionUID`后，Java在序列化和反序列化对象时，生成的`serialVersionUID`都为我们设定的`serialVersionUID`，这样就**保证了反序列化的成功**。
+
+**如果我们不设置`serialVersionUID`还能被序列化吗？会有问题吗？**
+
+如果我们不设置`serialVersionUID`可以被序列化，但是可能会报`InvalidClassException`异常。因为我们不显示设置java会给我们自动设置一个默认的。代码在`ObjectStreamCLass`类中：
+```
+public long getSerialVersionUID() {
+    // 这里如果suid为空，则java会通过computeDefaultSUID计算出一个suid
+    if (suid == null) {
+        suid = AccessController.doPrivileged(
+            new PrivilegedAction<Long>() {
+                public Long run() {
+                    return computeDefaultSUID(cl);
+                }
+            }
+        );
+    }
+    return suid.longValue();
+}
+```
+
+这里`computeDefaultSUID`方法其实做的事情简单来说就是通过反射获取这个类的各种信息，将它们放到一个字节数组中，然后使用`hash函数（SHA）`进行运算得到一个代表类的“摘要”。
+
+总结起来就是影响suid的因素有如下：
+| 因素 | 具体动作 |
+| --- | --- |
+| 类名 | 修改类名 |
+| 类修饰符 | 增加、减少和修改类修饰符 |
+| 类接口 | 增加、减少和实现接口 |
+| 类成员方法和构造方法 | 增加和减少方法；修改方法签名 |
+| 类成员变量（包括静态、常量） | 增加和减少变量；修改变量签名 |
+
+如果只是改变成员变量的顺序是不会影响到`suid`的计算的。
+
 ***未完待续***
