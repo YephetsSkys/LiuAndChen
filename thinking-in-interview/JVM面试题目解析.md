@@ -509,7 +509,32 @@ JVM即时编译器编译本地代码需要占用程序运行时间，通常需�
 
 #### 4.JVM的永久代/元空间中会发生垃圾回收么？
 
-一般情况JVM是不会回收永久代的垃圾，但是如果永久代满了或者超过配置的临界值，则会触发FullGC。CMS在默认情况下也不会回收永久代，但是可以通过参数`CMSClassUnloadingEnabled`来开启，JDK6-7默认为关闭状态，JDK8为开启状态。
+一般情况JVM是不会回收永久代的垃圾，但是如果永久代满了或者超过配置的临界值，则会触发FullGC。
+
+CMS在默认情况下也不会回收永久代，但是可以通过参数`CMSClassUnloadingEnabled`且自上次卸载类之后发生gc的次数大于`-XX:CMSClassUnloadingMaxInterval=0`(默认0)或老年代内存使用率大于`-XX:CMSIsTooFullPercentage=98`(默认98)来开启，JDK6-7默认为关闭状态，JDK8为开启状态。
+```
+// hotspot/src/share/vm/gc_implementation/concurrentMarkSweep.concurrentMarkSweepGeneration.cpp
+void CMSCollector::update_should_unload_classes() {
+  _should_unload_classes = false;
+  // Condition 1 above
+  if (_full_gc_requested && ExplicitGCInvokesConcurrentAndUnloadsClasses) {
+    _should_unload_classes = true;
+  } else if (CMSClassUnloadingEnabled) { // Condition 2.a above
+    // Disjuncts 2.b.(i,ii,iii) above
+    _should_unload_classes = (concurrent_cycles_since_last_unload() >=
+                              CMSClassUnloadingMaxInterval)
+                           || _cmsGen->is_too_full();
+  }
+}
+
+bool ConcurrentMarkSweepGeneration::is_too_full() const {
+  bool res = should_concurrent_collect();
+  res = res && (occupancy() > (double)CMSIsTooFullPercentage/100.0);
+  return res;
+}
+```
+
+`System.gc()`并开启了`-XX:+ExplicitGCInvokesConcurrentAndUnloadsClasses`也会执行类信息回收。
 
 #### 5.请讲一讲你知道Java有几种垃圾收集器？
 
@@ -674,7 +699,49 @@ cms回收器在老年代GC的时候，会使用到`Card Table`，目的不是找
 `-XX:+PrintGCTimeStamps`打印GC发生时候相对于应用启动的时间点<br>
 `-XX:+PrintGCDetails`查看GC详情<br>
 
-#### 17.请讲一讲G1的垃圾收集过程是怎样的？
+#### 17.Old区频繁的做CMS收集可能的原因？
+
+基本都是一次`Young GC`完成后，负责处理`CMS GC`的一个后台线程`concurrentMarkSweepThread`会不断地轮询，使用`shouldConcurrentCollect()`方法做一次检测，判断是否达到了回收条件。如果达到条件，使用`collect_in_background()`启动一次`Background模式GC`。轮询的判断是使用`sleepBeforeNextCycle()`方法，间隔周期为`-XX:CMSWaitDuration`决定，默认为`2s`。
+
+具体的代码：`src/hotspot/share/gc/cms/concurrentMarkSweepThread.cpp`中的`sleepBeforeNextCycle`方法。
+```
+void ConcurrentMarkSweepThread::sleepBeforeNextCycle() {
+  while (!should_terminate()) {
+    if(CMSWaitDuration >= 0) {
+      // Wait until the next synchronous GC, a concurrent full gc
+      // request or a timeout, whichever is earlier.
+      wait_on_cms_lock_for_scavenge(CMSWaitDuration);
+    } else {
+      // Wait until any cms_lock event or check interval not to call shouldConcurrentCollect permanently
+      wait_on_cms_lock(CMSCheckInterval);
+    }
+    // Check if we should start a CMS collection cycle
+    if (_collector->shouldConcurrentCollect()) {
+      return;
+    }
+    // .. collection criterion not yet met, let's go back
+    // and wait some more
+  }
+}
+```
+
+判断是否进行回收的代码在：`src/hotspot/share/gc/cms/concurrentMarkSweepGeneration.cpp`中的`shouldConcurrentCollect`方法。
+
+可能与内存泄漏有关系，一般触发CMS回收的相关的参数有`-XX:CMSInitiatingOccupancyFraction`，此值可能调整的比较小。还有就是如果之前的`Young GC`失败过，或者下次`Young区`执行`Young GC`可能失败，这两种情况下都需要触发`CMS GC`。
+
+#### 18.单次CMS收集耗时太长的原因有哪些？
+
+CMS回收的两个STW阶段，主要在`Init Mark`和`Final Remark`阶段，也是导致`CMS Old GC`最多的原因，另外有些情况就是在`STW`前等待`Mutator`的线程到达`SafePoint`也会导致时间过长。
+
+由于`Init Mark`整个过程比较简单，从`GC Root`出发标记`Old`中的对象，处理完成后借助`BitMap`处理下`Young`区对`Old`区的引用，整个过程基本都比较快，很少会有较大的停顿。
+
+`Final Remark`阶段是引起`CMS`耗时比较大的主要阶段。
+
+- 会对`SoftReference`、`WeakReference`、`FinalReference`几种引用进行处理。如果我们在实现`finalize`方法的时候，内部进行了比较耗时的操作，则会增加这一块的处理时间。我们可以增加`-XX:+ParallelRefProcEnabled`参数来开启并行处理，或者检查代码看哪些`finalize`方法进行了比较耗时的操作。
+- 如果开启了`-XX:+CMSClassUnloadingEnabled`会对类元信息进行回收处理，此处也是造成耗时的一大原因。如果我们没有大量动态类生成，可以将此参数关闭掉或者配置`-XX:CMSClassUnloadingMaxInterval=N`来指定发生N次`CMS`回收后进行一次类卸载。
+- 如果在`Concurrent Mark`阶段会将并发标记期间因用户程序继续运作而导致标记变动的那一部分对象的标记记录，会把上述对象所在的`Card`标识为`Dirty`，后续只需扫描这些`Dirty Card`的对象，避免扫描整个老年代，在最终标记阶段会重新扫描这些对象，造成耗时加长。
+
+#### 19.请讲一讲G1的垃圾收集过程是怎样的？
 
 G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混合收集、Full GC。
 
@@ -686,7 +753,7 @@ G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混
 
 ***Full GC***如果在年轻代区间或者老年代区间执行拷贝存活对象操作的时候，找不到一个空闲的区间，就会在GC日志中看到诸如“to-space exhausted”这样的错误日志，则G1 GC会尝试去扩展可用的Java堆内存大小。如果扩展失败，G1 GC会触发它的失败保护机制并且启动单线程的Full GC动作。这个阶段，单线程会针对整个堆内存里的所有区间进行标记、清除、压缩等工作。
 
-#### 18.请讲一讲G1的并发标记周期的过程？
+#### 20.请讲一讲G1的并发标记周期的过程？
 
 >- 初始标记：这个阶段是独占式的，它会停止所有的Java线程，然后开始标记根节点可及的所有对象。这个阶段可以和年轻代回收同时执行，这样的设计方式主要是为了加快独占阶段的执行速度。
 >- 根区间扫描：这个阶段是并发的，可以和Java应用程序线程同时运行。在年轻代回收的初始标记阶段拷贝到幸存者区间的对象需要被扫描并被当作标记根元素。任何从幸存者区间过来的引用都会被标记，基于这个原理，幸存者区间也被称为根区间。根区间扫描阶段必须在下一个垃圾回收暂停之前完成，这是因为所有从幸存者区间来的引用需要在整个堆区间扫描之前完成标记工作。
@@ -694,7 +761,7 @@ G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混
 >- 最终标记：是整个标记阶段的最后一环。这个阶段是一个独占式阶段，在整个独占式过程中，G1 GC完全处理 遗留的STAB日志缓存、更新。这个阶段主要的目标是统计存活对象的数量，同时也对引用对象进行处理。如果你的应用程序使用了大量的引用对象，那么这个阶段耗时会有所增加。
 >- 清除阶段：在统计期间，G1 GC会识别完全空的区域和可供进行混合垃圾回收的区域。清理阶段在将空白区域重置并添加到空闲列表时为部分并发。完全空的Region不会被加到CSet中，都在这个阶段直接回收了。此阶段与应用程序是并发执行的。
 
-#### 19.请讲一讲G1的混合回收？
+#### 21.请讲一讲G1的混合回收？
 
 G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点，最终确认所有的存活对象和每一个区间的存活对象比例。当老年代的占有率达到了`-XX:InitiatingHeapOccupancyPercent=45`，一个并行标记循环被初始化并启动了。在最后阶段，G1计算每个老年代区间的存活对象数量，并且在清理阶段会对每个老年代区间进行打分。这个阶段完成之后，G1开始一次混合回收。
 
@@ -708,7 +775,7 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 
 `-XX:G1HeapWastePercent=5`，这个选项对于控制一次混合回收循环回收的老年代区间数量有很大的影响作用。对于每一次混合回收暂停，在每次YGC之后和再次发生Mixed GC之前，会检查垃圾占比是否达到此参数，只有达到了，下次才会发生Mixed GC。
 
-#### 20.请跟我讲讲跟G1收集器相关的JVM参数有哪些？
+#### 22.请跟我讲讲跟G1收集器相关的JVM参数有哪些？
 
 -XX:+UseG1GC：打开G1收集器开关<br>
 -XX:MaxGCPauseMillis：指定最大停顿时间<br>
@@ -716,7 +783,7 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 -XX:InitiatingHeapOccupancyPercent：当整个堆使用率达到多少触发并发标记周期的执行，默认值45。<br>
 -XX:G1HeapRegionSize：每个Region的大小，最小1M，最大32M<br>
 
-#### 21.Metaspace相关的知识
+#### 23.Metaspace相关的知识
 
 >- 1.我们在指定`-XX:MetaspaceSize`的时候，虚拟机在启动的时候不会默认就申请`-XX:MetaspaceSize`指定的内存，一般初始容量是21807104（约20.8m）。
 >- 2.Metaspace由于使用不断扩容到-XX:MetaspaceSize参数指定的量，就会发生FGC；且之后每次Metaspace扩容都会发生FGC；
@@ -731,19 +798,19 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 >- 11.`-XX:MinMetaspaceFreeRatio`当进行过Metaspace GC之后，会计算当前Metaspace的空闲空间比，如果空闲比小于这个参数，那么虚拟机将增长Metaspace的大小。在本机该参数的默认值为40，也就是40%。设置该参数可以控制Metaspace的增长的速度，太小的值会导致Metaspace增长的缓慢，Metaspace的使用逐渐趋于饱和，可能会影响之后类的加载。而太大的值会导致Metaspace增长的过快，浪费内存；
 >- 12.`-XX:MaxMetaspaceFreeRatio`当进行过Metaspace GC之后， 会计算当前Metaspace的空闲空间比，如果空闲比大于这个参数，那么虚拟机会释放Metaspace的部分空间。在本机该参数的默认值为70，也就是70%；
 
-#### 22.线程大小相关的知识
+#### 24.线程大小相关的知识
 
 >- 1.`-XX:ThreadStackSize`和`-Xss`两个是一个意思，都是设置Java线程栈大小，但是`-Xss`需要添加上单位信息，而`-XX:ThreadStackSize`默认单位是KB，可以不需要添加；
 >- 2.`-XX:ThreadStackSize`在64位虚拟机中默认为1M，32位虚拟机为512K，需要4K对齐；
 >- 3.`-XX:CompilerThreadStackSize`设置编译线程栈大小，64位默认大小为4M，32位默认大小为2M，比如C2 CompilerThread等线程；
 
-#### 23.CodeCache Size相关参数
+#### 25.CodeCache Size相关参数
 
 >- 1.`-XX:InitialCodeCacheSize`是CodeCache初始化的时候的大小，但是随着CodeCache的增长不会降下来，但是CodeCache里的block是可以复用的；
 >- 2.`-XX:ReservedCodeCacheSize`是设置CodeCache最大值的内存值，默认值是48M，如果开启分层编译则是240M(默认JDK8是开启分层编译)，同时`-XX:ReservedCodeCacheSize`不能超过2G；
 >- 3.`-XX:CodeCacheMinimumFreeSpace`表示当CodeCache的可用大小不足这个值的时候，就会进行Code Cache Full的处理（处理期间整个jit会暂停，并且有且仅有一次打印code_cache_full到控制台，进行空间回收等操作）；
 
-#### 24.堆外内存相关参数
+#### 26.堆外内存相关参数
 
 >- 1.`-XX:MaxDirectMemorySize`设置堆外内存的大小，默认值是Xms-S0大小。
 
@@ -754,6 +821,38 @@ Java中在申请好的堆外内存是通过`DirectByteBuffer`类来关联，本�
 `DirectByteBuffer`对象如果从native层面创建是可以绕过堆外内存大小的检查，这个是非常危险的。
 
 建议不要关闭`System.gc()`的执行，不要配置参数`-XX:+DisableExplicitGC`此参数。
+
+#### 27.堆外内存OOM怎么办？
+
+内存使用率不断上升，甚至开始使用`swap`内存，同时可能出现`GC`时间飙升，线程被`Block`等现象，通过`top`命令发现`Java`进程的`RES`甚至超过了`-Xmx`的大小。出现这些现象时，基本可以确定是出现了堆外内存泄漏。
+
+JVM 的堆外内存泄漏，主要有两种的原因：
+- 通过`UnSafe#allocateMemory`，`ByteBuffer#allocateDirect`主动申请了堆外内存而没有释放，常见于`NIO`、`Netty`等相关组件。
+- 代码中有通过`JNI`调用`Native Code`申请的内存没有释放。
+
+在项目中添加`-XX:NativeMemoryTracking=detail`JVM参数后重启项目（需要注意的是，打开`NMT`会带来`5%~10%的性能损耗`）。使用命令`jcmd pid VM.native_memory detail`查看内存分布。重点观察`total`中的`committed`，因为`jcmd`命令显示的内存包含堆内内存、Code 区域、通过`Unsafe.allocateMemory`和`DirectByteBuffer`申请的内存，但是不包含其他`Native Code`申请的堆外内存。
+
+如果`total`中的`committed`和`top`中的`RES`相差不大，则应为主动申请的堆外内存未释放造成的，如果相差较大，则基本可以确定是`JNI`调用造成的。如果是`JNI`造成的，可以通过`Google perftools` + `Btrace`等工具，帮助我们分析出问题的代码。
+
+#### 28.GCLocker Initiated GC错误是什么？怎么解决？
+
+在`GC日志`中，出现`GC Cause`为`GCLocker Initiated GC`：
+```
+2020-09-23T16:49:09.727+0800: 504426.742: [GC (GCLocker Initiated GC) 504426.742: [ParNew (promotion failed): 209716K->6042K(1887488K), 0.0843330 secs] 1449487K->1347626K(3984640K), 0.0848963 secs] [Times: user=0.19 sys=0.00, real=0.09 secs]
+2020-09-23T16:49:09.812+0800: 504426.827: [Full GC (GCLocker Initiated GC) 504426.827: [CMS: 1341583K->419699K(2097152K), 1.8482275 secs] 1347626K->419699K(3984640K), [Metaspace: 297780K->297780K(1329152K)], 1.8490564 secs] [Times: user=1.62 sys=0.20, real=1.85 secs]
+```
+
+原因是`JNI`如果需要获取`JVM`中的`String`或者`数组`，直接使用了`JVM`堆区的指针，如果这时发生`GC`，就会导致数据错误。因此，在发生此类`JNI`调用时，禁止`GC`的发生，同时阻止其他线程进入`JNI`临界区，直到`最后一个线程退出临界区时触发一次GC`。
+
+`GC Locker`可能导致的不良后果有：
+- 如果此时是`年轻代`剩余空间不足，导致发生`GC`，由于无法进行`Young GC`，会将对象直接分配至`老年代`
+- 如果`老年代`也没有空间了，则会等待锁释放，导致线程阻塞。
+- 可能触发额外不必要的`Young GC`，`JDK`有一个`Bug`，有一定的几率，本来只该触发一次`GCLocker Initiated GC`的`Young GC`，实际发生了一次`Allocation Failure GC`又紧接着一次`GCLocker Initiated GC`。是因为`GCLocker Initiated GC`的属性被设为`full`，导致两次`GC`不能收敛。
+
+解决办法：
+- 添加`-XX+PrintJNIGCStalls`参数，可以打印出发生`JNI`调用时的线程，进一步分析，找到引发问题的`JNI`调用。
+- `JNI`调用需要谨慎，不一定可以提升性能，反而可能造成`GC问题`。
+- 升级版本到`JDK14`，避免[JDK-8048556](https://bugs.openjdk.java.net/browse/JDK-8048556)导致的`重复GC`。
 
 ### 三、JVM性能监控、故障处理工具介绍
 
@@ -860,5 +959,9 @@ static void reserveMemory(long size, int cap) {
 #### 3.过多线程导致OOM
 
 由于没一个线程的开启都要占用系统内存，因此当线程数量太多时，也有可能导致OOM。由于线程的栈空间也是在堆外分配的，因为和直接内存非常相似，如果想让系统支持更多的线程，那么应该使用一个较小的堆。可以通过`-Xss`或者`-XX:ThreadStackSize`来减少线程堆栈大小，默认为1M。
+
+#### 4.CMS问题鱼骨图参考
+
+![avatar](img/jdk/garbage/CMS问题根因鱼骨图.png)
 
 ### 四、JVM相关连环炮面试解析
