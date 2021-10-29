@@ -832,7 +832,7 @@ JVM 的堆外内存泄漏，主要有两种的原因：
 
 在项目中添加`-XX:NativeMemoryTracking=detail`JVM参数后重启项目（需要注意的是，打开`NMT`会带来`5%~10%的性能损耗`）。使用命令`jcmd pid VM.native_memory detail`查看内存分布。重点观察`total`中的`committed`，因为`jcmd`命令显示的内存包含堆内内存、Code 区域、通过`Unsafe.allocateMemory`和`DirectByteBuffer`申请的内存，但是不包含其他`Native Code`申请的堆外内存。
 
-如果`total`中的`committed`和`top`中的`RES`相差不大，则应为主动申请的堆外内存未释放造成的，如果相差较大，则基本可以确定是`JNI`调用造成的。如果是`JNI`造成的，可以通过`Google perftools` + `Btrace`等工具，帮助我们分析出问题的代码。
+如果`total`中的`committed`和`top`中的`RES`相差不大，则应为主动申请的堆外内存未释放造成的，如果相差较大，则基本可以确定是`JNI`调用造成的。如果是`JNI`造成的，可以通过[gperftools](https://github.com/gperftools/gperftools) + `Btrace`等工具，帮助我们分析出问题的代码。
 
 #### 28.GCLocker Initiated GC错误是什么？怎么解决？
 
