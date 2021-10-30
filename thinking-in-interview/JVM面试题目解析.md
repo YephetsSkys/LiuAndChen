@@ -342,6 +342,7 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 >- 4.对象各个年龄段的对象累计大小在Survivor区占比超过`-XX:TargetSurvivorRatio`的设置的百分比（默认50%），则超过此值大小年龄之后的所有的对象全部晋升到老年代。
 >- 5.分配的对象大于Eden区，则直接进入老年代。
 >- 6.Eden剩余空间不足分配且分配的对象大小大于Eden区的一半，并且垃圾收集器使用的是`-XX:+UseParallelGC`、`-XX:+UseParallelOldGC`、`-XX:+UseG1GC`这三种，则对象分配到老年代，不触发Minor GC。
+>- 7.还有一种我暂时也没搞懂，如果新生代选择`ParallelGC`且启动类型为`Xcomp`或者`-Xmixed`，并且`ParallelGCThreads=1`，在前几次年轻代GC的时候，会有十来KB大小的对象晋升到老年代。感觉是跟`Codecache`和`PLAB`相关（待解惑）
 
 #### 21.到底多大的对象会被直接扔到老年代？
 
