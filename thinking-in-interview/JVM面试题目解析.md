@@ -784,7 +784,37 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 -XX:InitiatingHeapOccupancyPercent：当整个堆使用率达到多少触发并发标记周期的执行，默认值45。<br>
 -XX:G1HeapRegionSize：每个Region的大小，最小1M，最大32M<br>
 
-#### 23.Metaspace相关的知识
+#### 23.为什么G1不维护年轻代到老年代的记忆集？
+
+`G1`分了`young GC`和`mixed gc`。`young gc`会选取`所有年轻代的region`进行收集。`midex gc`会选取`所有年轻代的region`和一些`收集收益高的老年代region`进行收集。所以`年轻代的region`都在收集范围内，所以不需要额外记录年轻代到老年代的跨代引用。
+
+#### 24.CMS和G1为了维持并发的正确性分别用了什么手段？
+
+并发执行漏标的两个充分必要条件是：
+- 将新对象插入已扫描完毕的对象中，即插入黑色对象到白色对象的引用。`(CMS)`
+- 删除了灰色对象到白色对象的引用。`(G1)`
+
+并发标记开始的时候：
+![avatar](img/jdk/garbage/并发标记期间指针变更1.webp)
+
+当指针发生变更的时候：
+![avatar](img/jdk/garbage/并发标记期间指针变更2.webp)
+
+最后可能形成的标记：
+![avatar](img/jdk/garbage/并发标记期间指针变更3.webp)
+
+`CMS`和`G1`分别通过`增量更新`和`SATB`来打破这两个充分必要条件，维持了`GC`线程与应用线程并发的正确性。
+
+`CMS`用了`增量更新（Incremental update）`，打破了第一个条件，通过写屏障将插入的白色对象标记成灰色，即加入到标记栈中，在`remark`阶段再扫描，`防止漏标情况`。
+
+`G1`用了`SATB（snapshot-at-the-beginning）`，打破了第二个条件，会通过写屏障把旧的引用关系记下来，之后再把旧引用关系再扫描过。说白了就是在`GC`开始时候如果对象是存活的就认为其存活，等于拍了个快照。而且`GC`过程中`新分配的对象也都认为是活的`。每个`region`会维持`TAMS（top at mark start）指针`，分别是`prevTAMS`和`nextTAMS`分别`标记两次并发标记`开始时候`Top指针的位置`。`Top指针`就是`region`中`最新分配对象的位置`，所以`nextTAMS`和`Top`之间区域的对象都是新分配的对象都认为其是存活的即可。**原始快照方式不会产生浮动垃圾。**
+
+而利用增量更新的`CMS`在`remark阶段`需要重新扫描所有线程栈和整个年轻代，因为等于之前的根有新增，所以需要重新扫描过，如果年轻代的对象很多的话会比较耗时。要注意这阶段是`STW`的，很关键，所以`CMS`也提供了一个`-XX:+CMSScavengeBeforeRemark`参数，来强制`remark`阶段之前来一次`YGC`。
+
+**浮动垃圾的产生：**
+因为增量更新不记录删除的引用关系，当某个引用关系被标记后，用户线程将该引用关系断开，这个断开操作不会被记录，所以断开的对象就不会被清除，产生了浮动垃圾。
+
+#### 25.Metaspace相关的知识
 
 >- 1.我们在指定`-XX:MetaspaceSize`的时候，虚拟机在启动的时候不会默认就申请`-XX:MetaspaceSize`指定的内存，一般初始容量是21807104（约20.8m）。
 >- 2.Metaspace由于使用不断扩容到-XX:MetaspaceSize参数指定的量，就会发生FGC；且之后每次Metaspace扩容都会发生FGC；
@@ -799,19 +829,19 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 >- 11.`-XX:MinMetaspaceFreeRatio`当进行过Metaspace GC之后，会计算当前Metaspace的空闲空间比，如果空闲比小于这个参数，那么虚拟机将增长Metaspace的大小。在本机该参数的默认值为40，也就是40%。设置该参数可以控制Metaspace的增长的速度，太小的值会导致Metaspace增长的缓慢，Metaspace的使用逐渐趋于饱和，可能会影响之后类的加载。而太大的值会导致Metaspace增长的过快，浪费内存；
 >- 12.`-XX:MaxMetaspaceFreeRatio`当进行过Metaspace GC之后， 会计算当前Metaspace的空闲空间比，如果空闲比大于这个参数，那么虚拟机会释放Metaspace的部分空间。在本机该参数的默认值为70，也就是70%；
 
-#### 24.线程大小相关的知识
+#### 26.线程大小相关的知识
 
 >- 1.`-XX:ThreadStackSize`和`-Xss`两个是一个意思，都是设置Java线程栈大小，但是`-Xss`需要添加上单位信息，而`-XX:ThreadStackSize`默认单位是KB，可以不需要添加；
 >- 2.`-XX:ThreadStackSize`在64位虚拟机中默认为1M，32位虚拟机为512K，需要4K对齐；
 >- 3.`-XX:CompilerThreadStackSize`设置编译线程栈大小，64位默认大小为4M，32位默认大小为2M，比如C2 CompilerThread等线程；
 
-#### 25.CodeCache Size相关参数
+#### 27.CodeCache Size相关参数
 
 >- 1.`-XX:InitialCodeCacheSize`是CodeCache初始化的时候的大小，但是随着CodeCache的增长不会降下来，但是CodeCache里的block是可以复用的；
 >- 2.`-XX:ReservedCodeCacheSize`是设置CodeCache最大值的内存值，默认值是48M，如果开启分层编译则是240M(默认JDK8是开启分层编译)，同时`-XX:ReservedCodeCacheSize`不能超过2G；
 >- 3.`-XX:CodeCacheMinimumFreeSpace`表示当CodeCache的可用大小不足这个值的时候，就会进行Code Cache Full的处理（处理期间整个jit会暂停，并且有且仅有一次打印code_cache_full到控制台，进行空间回收等操作）；
 
-#### 26.堆外内存相关参数
+#### 28.堆外内存相关参数
 
 >- 1.`-XX:MaxDirectMemorySize`设置堆外内存的大小，默认值是Xms-S0大小。
 
@@ -823,7 +853,7 @@ Java中在申请好的堆外内存是通过`DirectByteBuffer`类来关联，本�
 
 建议不要关闭`System.gc()`的执行，不要配置参数`-XX:+DisableExplicitGC`此参数。
 
-#### 27.堆外内存OOM怎么办？
+#### 29.堆外内存OOM怎么办？
 
 内存使用率不断上升，甚至开始使用`swap`内存，同时可能出现`GC`时间飙升，线程被`Block`等现象，通过`top`命令发现`Java`进程的`RES`甚至超过了`-Xmx`的大小。出现这些现象时，基本可以确定是出现了堆外内存泄漏。
 
@@ -835,7 +865,7 @@ JVM 的堆外内存泄漏，主要有两种的原因：
 
 如果`total`中的`committed`和`top`中的`RES`相差不大，则应为主动申请的堆外内存未释放造成的，如果相差较大，则基本可以确定是`JNI`调用造成的。如果是`JNI`造成的，可以通过[gperftools](https://github.com/gperftools/gperftools) + `Btrace`等工具，帮助我们分析出问题的代码。
 
-#### 28.GCLocker Initiated GC错误是什么？怎么解决？
+#### 30.GCLocker Initiated GC错误是什么？怎么解决？
 
 在`GC日志`中，出现`GC Cause`为`GCLocker Initiated GC`：
 ```
