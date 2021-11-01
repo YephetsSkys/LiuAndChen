@@ -606,6 +606,8 @@ CMS收集器的工作过程比其他收集器（除了G1、ZGC、Shenandoah）�
 
 并发重置：重新调整堆的大小，并为下一次GC做好数据结构支持，比如重置卡表的标位。
 
+**`CMS`的瓶颈就在于`重新标记阶段`，需要较长花费时间来进行重新扫描。**
+
 #### 8.GC Roots对象包含哪里？
 
 >- 1.在虚拟机栈(栈帧中的本地变量表)中引用的对象，譬如各个线程被调用的方法堆栈中使用到的参数、局部变量、临时变量等；
@@ -618,7 +620,7 @@ CMS收集器的工作过程比其他收集器（除了G1、ZGC、Shenandoah）�
 
 #### 9.CMS收集器中的卡表(Card Table)的作用？
 
-基于卡表（Card Table）的设计，通常将堆空间划分为一系列2次幂大小的卡页（Card Page）。卡表（Card Table），用于标记卡页的状态，每个卡表项对应一个卡页。HotSpot JVM的卡页（Card Page）大小为512字节，卡表（Card Table）被实现为一个简单的字节数组，即卡表的每个标记项为1个字节。当对一个对象引用进行写操作时（对象引用改变），写屏障逻辑将会标记对象所在的卡页为dirty。
+基于卡表（`Card Table`）的设计，通常将堆空间划分为一系列2次幂大小的卡页（Card Page）。卡表（Card Table），用于标记卡页的状态，每个卡表项对应一个卡页。HotSpot JVM的卡页（Card Page）大小为512字节，卡表（Card Table）被实现为一个简单的字节数组，即卡表的每个标记项为1个字节。当对一个对象引用进行写操作时（对象引用改变），写屏障逻辑将会标记对象所在的卡页为dirty。
 
 CMS在并发标记阶段，应用线程和GC线程是并发执行的，因此可能产生新的对象或对象关系发生变化，例如：
 >- 新生代的对象晋升到老年代；
@@ -627,16 +629,20 @@ CMS在并发标记阶段，应用线程和GC线程是并发执行的，因此可
 
 对于这些对象，需要重新标记以防止被遗漏。为了提高重新标记的效率，并发标记阶段会把这些发生变化的对象所在的Card标识为Dirty，这样后续阶段就只需要扫描这些Dirty Card的对象，从而避免扫描整个老年代。
 
-#### 10.CMS中minor gc和major gc是顺序发生的吗？
+#### 10.CMS写屏障又是维护卡表，又得维护增量更新？
+
+卡表其实只有一份，又得用来支持`YGC`又得支持`CMS`并发时的增量更新肯定是不够的。每次`YGC`都会扫描重置卡表，这样增量更新的记录就被清理了。所以还搞了个`mod-union table`，在并发标记时，如果发生`YGC`需要重置卡表的记录时，就会更新`mod-union table`对应的位置。这样`CMS重新标记阶段`就能结合`当时的卡表`和`mod-union table`来处理增量更新，防止**漏标对象**了。
+
+#### 11.CMS中minor gc和major gc是顺序发生的吗？
 
 不是的，可以交叉发生，即在并发周期执行过程中，是可以发生Minor gc的，这个找个gc日志就可以观察到。
 
-#### 11.CMS的并发收集周期何时触发？
+#### 12.CMS的并发收集周期何时触发？
 
 >- 阈值检查机制：老年代的使用空间达到某个阈值，JVM的默认值是92%（jdk1.5之前是68%，jdk1.6之后是92%），或者可以通过`-XX:+CMSInitiatingOccupancyFraction`和`-XX:+UseCMSInitiatingOccupancyOnly`两个参数来设置；这个参数的设置需要看应用场景，设置得太小，会导致CMS频繁发生，设置得太大，会导致过多的并发模式失败。
 >- 动态检查机制：JVM会根据最近的回收历史，估算下一次老年代被耗尽的时间，快到这个时间的时候就启动一个并发周期。设置`-XX:+UseCMSInitiatingOccupancyOnly`这个参数可以将这个特性关闭。
 
-#### 12.concurrent mode failure和promotion failed触发的Full GC有啥不同？
+#### 13.concurrent mode failure和promotion failed触发的Full GC有啥不同？
 
 concurrent mode failure触发的是foreground模式，会暂停整个应用，会将一些并行的阶段省掉做一次老年代收集，行为跟Serial-Old的一样，至于在这个过程中是否需要压缩，则需要看三个条件：
 >- 我们设置了`-XX:+UseCMSCompactAtFullCollection`和`-XX:CMSFullGCsBeforeCompaction=N`，前者设置为true，后者默认是0，前者表示是在Full GC的时候执行压缩，后者表示是每隔多少个进行压缩，默认是0的话就是每次Full GC都压缩；
@@ -645,12 +651,12 @@ concurrent mode failure触发的是foreground模式，会暂停整个应用，�
 
 promotion failed触发的是我们常说的的Full GC，对年轻代和老年代都会回收，并进行整理。
 
-#### 13.promotion failed和concurrent mode failure的触发原因有啥不同？
+#### 14.promotion failed和concurrent mode failure的触发原因有啥不同？
 
 >- promotion failed是说，担保机制确定老年代是否有足够的空间容纳新来的对象，如果担保机制说有，但是真正分配的时候发现由于碎片导致找不到连续的空间而失败；
 >- concurrent mode failure是指并发周期还没执行完，用户线程就来请求比预留空间更大的空间了，即后台线程的收集没有赶上应用线程的分配速度。
 
-#### 14.CMS有哪两种GC实现方式？它们的区别是什么？触发条件是什么？
+#### 15.CMS有哪两种GC实现方式？它们的区别是什么？触发条件是什么？
 
 `CMS GC`在实现上分成`foreground collector`和`background collector`。
 
@@ -671,12 +677,12 @@ promotion failed触发的是我们常说的的Full GC，对年轻代和老年代
 >- 5.根据增量`GC`是否可能会失败，通过判断当前`Old Gen`剩余的空间大小是否足够容纳`Young GC`晋升的对象大小。`Young GC`到底要晋升多少是无法提前知道的，因此，这里通过统计平均每次`Young GC`晋升的大小和当前`Young GC`可能晋升的最大大小来进行比较；
 >- 6.根据`metaspace`情况判断，如果配置了`CMSClassUnloadingEnabled`参数，如果`metaspace`申请空间失败触发；
 
-#### 15.什么情况下才选择使用CMS收集器呢？
+#### 16.什么情况下才选择使用CMS收集器呢？
 
 >- 堆太小，如果不是对延迟有特别高的需求，不建议使用CMS，主要是由于CMS的几个缺点导致的：（1）并发周期的触发比例不好设置；（2）抢占CPU时间；（3）担保判断导致YGC变慢；（4）碎片问题。
 >- 除了看吞吐量和延时，还需要看具体的应用，比方说ES，Lucene和G1是不兼容的，因此默认的收集器就是CMS。
 
-#### 16.听说过CMS的并发预处理和并发可中断预处理吗？
+#### 17.听说过CMS的并发预处理和并发可中断预处理吗？
 
 CMS在并发标记和重新标记中间会有另外两个动作，一个是`并发预处理`即`concurrent-preclean`，一个是`并发中断预处理`即`concurrent-abortable-preclean`。
 
@@ -700,7 +706,7 @@ cms回收器在老年代GC的时候，会使用到`Card Table`，目的不是找
 `-XX:+PrintGCTimeStamps`打印GC发生时候相对于应用启动的时间点<br>
 `-XX:+PrintGCDetails`查看GC详情<br>
 
-#### 17.Old区频繁的做CMS收集可能的原因？
+#### 18.Old区频繁的做CMS收集可能的原因？
 
 基本都是一次`Young GC`完成后，负责处理`CMS GC`的一个后台线程`concurrentMarkSweepThread`会不断地轮询，使用`shouldConcurrentCollect()`方法做一次检测，判断是否达到了回收条件。如果达到条件，使用`collect_in_background()`启动一次`Background模式GC`。轮询的判断是使用`sleepBeforeNextCycle()`方法，间隔周期为`-XX:CMSWaitDuration`决定，默认为`2s`。
 
@@ -730,7 +736,7 @@ void ConcurrentMarkSweepThread::sleepBeforeNextCycle() {
 
 可能与内存泄漏有关系，一般触发CMS回收的相关的参数有`-XX:CMSInitiatingOccupancyFraction`，此值可能调整的比较小。还有就是如果之前的`Young GC`失败过，或者下次`Young区`执行`Young GC`可能失败，这两种情况下都需要触发`CMS GC`。
 
-#### 18.单次CMS收集耗时太长的原因有哪些？
+#### 19.单次CMS收集耗时太长的原因有哪些？
 
 CMS回收的两个STW阶段，主要在`Init Mark`和`Final Remark`阶段，也是导致`CMS Old GC`最多的原因，另外有些情况就是在`STW`前等待`Mutator`的线程到达`SafePoint`也会导致时间过长。
 
@@ -742,7 +748,7 @@ CMS回收的两个STW阶段，主要在`Init Mark`和`Final Remark`阶段，也�
 - 如果开启了`-XX:+CMSClassUnloadingEnabled`会对类元信息进行回收处理，此处也是造成耗时的一大原因。如果我们没有大量动态类生成，可以将此参数关闭掉或者配置`-XX:CMSClassUnloadingMaxInterval=N`来指定发生N次`CMS`回收后进行一次类卸载。
 - 如果在`Concurrent Mark`阶段会将并发标记期间因用户程序继续运作而导致标记变动的那一部分对象的标记记录，会把上述对象所在的`Card`标识为`Dirty`，后续只需扫描这些`Dirty Card`的对象，避免扫描整个老年代，在最终标记阶段会重新扫描这些对象，造成耗时加长。
 
-#### 19.请讲一讲G1的垃圾收集过程是怎样的？
+#### 20.请讲一讲G1的垃圾收集过程是怎样的？
 
 G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混合收集、Full GC。
 
@@ -754,7 +760,7 @@ G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混
 
 ***Full GC***如果在年轻代区间或者老年代区间执行拷贝存活对象操作的时候，找不到一个空闲的区间，就会在GC日志中看到诸如“to-space exhausted”这样的错误日志，则G1 GC会尝试去扩展可用的Java堆内存大小。如果扩展失败，G1 GC会触发它的失败保护机制并且启动单线程的Full GC动作。这个阶段，单线程会针对整个堆内存里的所有区间进行标记、清除、压缩等工作。
 
-#### 20.请讲一讲G1的并发标记周期的过程？
+#### 21.请讲一讲G1的并发标记周期的过程？
 
 >- 初始标记：这个阶段是独占式的，它会停止所有的Java线程，然后开始标记根节点可及的所有对象。这个阶段可以和年轻代回收同时执行，这样的设计方式主要是为了加快独占阶段的执行速度。
 >- 根区间扫描：这个阶段是并发的，可以和Java应用程序线程同时运行。在年轻代回收的初始标记阶段拷贝到幸存者区间的对象需要被扫描并被当作标记根元素。任何从幸存者区间过来的引用都会被标记，基于这个原理，幸存者区间也被称为根区间。根区间扫描阶段必须在下一个垃圾回收暂停之前完成，这是因为所有从幸存者区间来的引用需要在整个堆区间扫描之前完成标记工作。
@@ -762,7 +768,7 @@ G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混
 >- 最终标记：是整个标记阶段的最后一环。这个阶段是一个独占式阶段，在整个独占式过程中，G1 GC完全处理 遗留的STAB日志缓存、更新。这个阶段主要的目标是统计存活对象的数量，同时也对引用对象进行处理。如果你的应用程序使用了大量的引用对象，那么这个阶段耗时会有所增加。
 >- 清除阶段：在统计期间，G1 GC会识别完全空的区域和可供进行混合垃圾回收的区域。清理阶段在将空白区域重置并添加到空闲列表时为部分并发。完全空的Region不会被加到CSet中，都在这个阶段直接回收了。此阶段与应用程序是并发执行的。
 
-#### 21.请讲一讲G1的混合回收？
+#### 22.请讲一讲G1的混合回收？
 
 G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点，最终确认所有的存活对象和每一个区间的存活对象比例。当老年代的占有率达到了`-XX:InitiatingHeapOccupancyPercent=45`，一个并行标记循环被初始化并启动了。在最后阶段，G1计算每个老年代区间的存活对象数量，并且在清理阶段会对每个老年代区间进行打分。这个阶段完成之后，G1开始一次混合回收。
 
@@ -776,7 +782,7 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 
 `-XX:G1HeapWastePercent=5`，这个选项对于控制一次混合回收循环回收的老年代区间数量有很大的影响作用。对于每一次混合回收暂停，在每次YGC之后和再次发生Mixed GC之前，会检查垃圾占比是否达到此参数，只有达到了，下次才会发生Mixed GC。
 
-#### 22.请跟我讲讲跟G1收集器相关的JVM参数有哪些？
+#### 23.请跟我讲讲跟G1收集器相关的JVM参数有哪些？
 
 -XX:+UseG1GC：打开G1收集器开关<br>
 -XX:MaxGCPauseMillis：指定最大停顿时间<br>
@@ -784,11 +790,11 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 -XX:InitiatingHeapOccupancyPercent：当整个堆使用率达到多少触发并发标记周期的执行，默认值45。<br>
 -XX:G1HeapRegionSize：每个Region的大小，最小1M，最大32M<br>
 
-#### 23.为什么G1不维护年轻代到老年代的记忆集？
+#### 24.为什么G1不维护年轻代到老年代的记忆集？
 
 `G1`分了`young GC`和`mixed gc`。`young gc`会选取`所有年轻代的region`进行收集。`midex gc`会选取`所有年轻代的region`和一些`收集收益高的老年代region`进行收集。所以`年轻代的region`都在收集范围内，所以不需要额外记录年轻代到老年代的跨代引用。
 
-#### 24.CMS和G1为了维持并发的正确性分别用了什么手段？
+#### 25.CMS和G1为了维持并发的正确性分别用了什么手段？
 
 `CMS`和`G1`算法都涉及对可达对象的并发标记。并发标记的主要问题是垃圾收集器在标记对象的过程中`Mutator线程`可能正在改变对象引用关系图，从而造成漏标和多标。**多标不会影响程序的正确性，只是造成所谓的浮动垃圾。但漏标则会导致可达对象被当做垃圾收集掉，从而影响程序的正确性。**
 
@@ -820,7 +826,7 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 **浮动垃圾的产生：**
 因为增量更新不记录删除的引用关系，当某个引用关系被标记后，用户线程将该引用关系断开，这个断开操作不会被记录，所以断开的对象就不会被清除，产生了浮动垃圾。
 
-#### 25.Metaspace相关的知识
+#### 26.Metaspace相关的知识
 
 >- 1.我们在指定`-XX:MetaspaceSize`的时候，虚拟机在启动的时候不会默认就申请`-XX:MetaspaceSize`指定的内存，一般初始容量是21807104（约20.8m）。
 >- 2.Metaspace由于使用不断扩容到-XX:MetaspaceSize参数指定的量，就会发生FGC；且之后每次Metaspace扩容都会发生FGC；
@@ -835,19 +841,19 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 >- 11.`-XX:MinMetaspaceFreeRatio`当进行过Metaspace GC之后，会计算当前Metaspace的空闲空间比，如果空闲比小于这个参数，那么虚拟机将增长Metaspace的大小。在本机该参数的默认值为40，也就是40%。设置该参数可以控制Metaspace的增长的速度，太小的值会导致Metaspace增长的缓慢，Metaspace的使用逐渐趋于饱和，可能会影响之后类的加载。而太大的值会导致Metaspace增长的过快，浪费内存；
 >- 12.`-XX:MaxMetaspaceFreeRatio`当进行过Metaspace GC之后， 会计算当前Metaspace的空闲空间比，如果空闲比大于这个参数，那么虚拟机会释放Metaspace的部分空间。在本机该参数的默认值为70，也就是70%；
 
-#### 26.线程大小相关的知识
+#### 27.线程大小相关的知识
 
 >- 1.`-XX:ThreadStackSize`和`-Xss`两个是一个意思，都是设置Java线程栈大小，但是`-Xss`需要添加上单位信息，而`-XX:ThreadStackSize`默认单位是KB，可以不需要添加；
 >- 2.`-XX:ThreadStackSize`在64位虚拟机中默认为1M，32位虚拟机为512K，需要4K对齐；
 >- 3.`-XX:CompilerThreadStackSize`设置编译线程栈大小，64位默认大小为4M，32位默认大小为2M，比如C2 CompilerThread等线程；
 
-#### 27.CodeCache Size相关参数
+#### 28.CodeCache Size相关参数
 
 >- 1.`-XX:InitialCodeCacheSize`是CodeCache初始化的时候的大小，但是随着CodeCache的增长不会降下来，但是CodeCache里的block是可以复用的；
 >- 2.`-XX:ReservedCodeCacheSize`是设置CodeCache最大值的内存值，默认值是48M，如果开启分层编译则是240M(默认JDK8是开启分层编译)，同时`-XX:ReservedCodeCacheSize`不能超过2G；
 >- 3.`-XX:CodeCacheMinimumFreeSpace`表示当CodeCache的可用大小不足这个值的时候，就会进行Code Cache Full的处理（处理期间整个jit会暂停，并且有且仅有一次打印code_cache_full到控制台，进行空间回收等操作）；
 
-#### 28.堆外内存相关参数
+#### 29.堆外内存相关参数
 
 >- 1.`-XX:MaxDirectMemorySize`设置堆外内存的大小，默认值是Xms-S0大小。
 
@@ -859,7 +865,7 @@ Java中在申请好的堆外内存是通过`DirectByteBuffer`类来关联，本�
 
 建议不要关闭`System.gc()`的执行，不要配置参数`-XX:+DisableExplicitGC`此参数。
 
-#### 29.堆外内存OOM怎么办？
+#### 30.堆外内存OOM怎么办？
 
 内存使用率不断上升，甚至开始使用`swap`内存，同时可能出现`GC`时间飙升，线程被`Block`等现象，通过`top`命令发现`Java`进程的`RES`甚至超过了`-Xmx`的大小。出现这些现象时，基本可以确定是出现了堆外内存泄漏。
 
@@ -871,7 +877,7 @@ JVM 的堆外内存泄漏，主要有两种的原因：
 
 如果`total`中的`committed`和`top`中的`RES`相差不大，则应为主动申请的堆外内存未释放造成的，如果相差较大，则基本可以确定是`JNI`调用造成的。如果是`JNI`造成的，可以通过[gperftools](https://github.com/gperftools/gperftools) + `Btrace`等工具，帮助我们分析出问题的代码。
 
-#### 30.GCLocker Initiated GC错误是什么？怎么解决？
+#### 31.GCLocker Initiated GC错误是什么？怎么解决？
 
 在`GC日志`中，出现`GC Cause`为`GCLocker Initiated GC`：
 ```
