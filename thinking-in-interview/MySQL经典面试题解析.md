@@ -329,14 +329,14 @@ WHERE t.NAME LIKE '%index_page_merge%';
 
 ##### 按照影响范围分：
 
->- 表级锁：在MySQL中执行引擎MYISAM是为表级锁不支持事物，所以在是使用MYISAM执行引擎对表进行读操作时就会默认为该表添加读锁，同理在写操作时会自动为表添加写锁。
->- 行级锁：在MySQL中执行引擎INNODB默认为行级锁，注意该锁是基于索引的，当索引失效时则会自动升级为表级锁，在使用INNODB作为执行引擎时在对一条数据写操作时会自动为其添加写锁(排他锁)，所以会阻塞其他事物对该行数据的读写操作，当事物提交或者回滚之后会将该写锁自动释放。
+>- 表级锁：在MySQL中执行引擎`MYISAM`是为表级锁不支持事物，所以在是使用`MYISAM`执行引擎对表进行读操作时就会**默认为该表添加读锁**，同理在**写操作时会自动为表添加写锁**。
+>- 行级锁：在MySQL中执行引擎**INNODB默认为行级锁**，注意该锁是基于索引的，当**索引失效时则会自动升级为表级锁**，在使用INNODB作为执行引擎时在对一条数据写操作时会自动为其添加写锁(排他锁)，所以会阻塞其他事物对该行数据的读写操作，当事物提交或者回滚之后会将该写锁自动释放。
 >- 页锁：一直没用到过。
 
 ##### 意向锁：
 
 >- 意向共享锁(IS锁)：事务想要获得一张表中某几行的共享锁；
->- 意向排他锁(IX锁)： 事务想要获得一张表中某几行的排他锁。
+>- 意向排他锁(IX锁)：事务想要获得一张表中某几行的排他锁。
 
 比如：事务1在表1上加了S锁后，事务2想要更改某行记录，需要添加IX锁，由于不兼容，所以需要等待S锁释放；如果事务1在表1上加了IS锁，事务2添加的IX锁与IS锁兼容，就可以操作，这就实现了更细粒度的加锁。
 
@@ -350,9 +350,9 @@ WHERE t.NAME LIKE '%index_page_merge%';
 
 - 间隙锁是一种加在两个索引之间的锁，或者加在第一个索引之前，或最后一个索引之后的间隙。
 - 使用间隙锁锁住的是一个区间，而不仅仅是这个区间中的每一条数据。
-- 间隙锁只阻止其他事务插入到间隙中，他们不阻止其他事务在同一个间隙上获得间隙锁，所以 gap x lock 和 gap s lock 有相同的作用。
+- 间隙锁**只阻止其他事务插入到间隙中，他们不阻止其他事务在同一个间隙上获得间隙锁**，所以`gap x lock`和`gap s lock`有相同的作用。
 
-间隙锁的事务数据（关键词：gap before rec），记录如下：
+间隙锁的事务数据（关键词：`gap before rec`），记录如下：
 ```
 RECORD LOCKS space id 177 page no 4 n bits 80 index idx_name of table `test2`.`account` 
 trx id 38049 lock_mode X locks gap before rec
@@ -365,7 +365,7 @@ Record lock, heap no 6 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
 
 Next-key锁是记录锁和间隙锁的组合，它指的是加在某条记录以及这条记录前面间隙上的锁。
 
-#### 插入意向锁（Insert Intention）
+##### 插入意向锁（Insert Intention）
 
 插入意向锁是在插入一行记录操作之前设置的一种间隙锁，这个锁释放了一种插入方式的信号，亦即多个事务在相同的索引间隙插入时如果不是插入间隙中相同的位置就不需要互相等待。
 
@@ -441,7 +441,7 @@ MySQL有三种锁的级别：页级、表级、行级。
 | commit;<br>提交，释放i=1上的锁 | | |
 | | 成功获取i=1的next-key lock(S)；<br>请求i=1的record lock(X)锁；<br>但session3上已持有i=1的next-key(S)，被阻塞、等待中；<br><br>后面session3检测到死锁冲突后，session2才insert成功；<br><br>Query OK, 1 row affected (11.82 sec)<br>Records: 1 Duplicates: 0 Warnings: 0 | 成功获取i=1的next-key lock(S)；<br>请求i=1的record lock(X)锁；<br>触发死锁检测，失败、回滚；<br><br>ERROR 1213 (40001): Deadlock found when trying to get lock; try restarting transaction |
 
-#### 10.Update与Insert的死锁排查
+#### 10.两个事务Update、Insert的死锁排查
 
 ```
 //id是自增主键，name是非唯一索引，balance普通字段
@@ -467,12 +467,12 @@ insert into account values(null,'Yan',100);
 ```
 
 死锁真相还原：
-- 事务A执行完Update Wei的语句，持有（E，W]的Next-key Lock，（W，+∞）的Gap Lock ，插入成功~
-- 事务B执行完Update Eason语句，持有（-∞，E]的 Next-Key Lock，（E，W）的Gap Lock，插入成功~
-- 事务A执行Insert Jay的语句时，因为需要（E，W）的插入意向锁，但是（E，W）在事务B怀里，所以它陷入心塞~
-- 事务B执行Insert Yan的语句时，因为需要(W,+∞) 的插入意向锁，但是(W,+∞) 在事务A怀里，所以它也陷入心塞~
-- 事务A持有（W，+∞）的Gap Lock，在等待（E，W）的插入意向锁，事务B持有（E，W）的Gap锁，在等待(W,+∞) 的插入意向锁，所以形成了死锁的闭环
-- 事务A,B形成了死锁闭环后，因为Innodb的底层机制，它会让其中一个事务让出资源，另外的事务执行成功，这就是为什么你最后看到事务B插入成功了，但是事务A的插入显示了Deadlock found ~
+- 事务A执行完Update Wei的语句，持有`（E，W]的Next-key Lock`，`（W，+∞）的Gap Lock`，插入成功~
+- 事务B执行完Update Eason语句，持有`（-∞，E]的 Next-Key Lock`，`（E，W）的Gap Lock`，插入成功~
+- 事务A执行Insert Jay的语句时，因为需要`（E，W）的插入意向锁`，但是`（E，W）在事务B怀里`，所以它陷入心塞~
+- 事务B执行Insert Yan的语句时，因为需要`(W,+∞) 的插入意向锁`，但是`(W,+∞) 在事务A怀里`，所以它也陷入心塞~
+- 事务A持有`（W，+∞）的Gap Lock`，在等待`（E，W）的插入意向锁`，事务B持有`（E，W）的Gap锁`，在等待`(W,+∞) 的插入意向锁`，所以形成了死锁的闭环
+- 事务A,B形成了死锁闭环后，因为Innodb的底层机制，它会让其中一个事务让出资源，另外的事务执行成功，这就是为什么你最后看到事务B插入成功了，但是事务A的插入显示了`Deadlock found`~
 
 ## 五、事务相关
 
