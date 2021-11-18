@@ -203,18 +203,22 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 
 3) 辅助信息相关
 
--XX:+PrintGC：打印GC信息。<br>
--XX:+PrintGCDetails：打印GC详细信息（比上面多打印用户、系统在GC中的耗时，每个的回收前后的值等）<br>
--XX:+PrintGCDateStamps：GC日志按照年月日打印，否则打印的是进程启动后的时间，不利于定位问题。<br>https://www.baidu.com/link?url=x-tzXqb3CD6-rhIX0dOoRP5Vt3beNApEp0a2SiC-pIUQQqLfJWOe0I-ycSEcOc4p-jrYLk2N0sehw_XWj5uN_jrExelo4HzoUywxlsJHSba&wd=&eqid=af3b7c1400007217000000035f4f6eb0
--XX:+PrintHeapAtGC：打印GC发生前的堆栈内存空间信息。<br>
--XX:+HeapDumpOnOutOfMemoryError：在OOM后将内存堆栈导出。<br>
--XX:HeapDumpPath=filePath：OOM后的内存堆栈信息导出到指定的位置。<br>
--XX:ErrorFile：如果发生JVM错误(进程级错误)，将错误数据会保存到指定的位置。不配置则默认是./hs_err_pid%p.log。<br>
--Xloggc：配置GC日志保存的文件路径，开启滚动可以在文件名中加%t参数。<br>
--XX:+UseGCLogFileRotation：打开GC日志滚动记录功能，默认关闭。<br>
--XX:NumberOfGCLogFiles：设置滚动日志文件的个数，必须大于等于1。<br>
--XX:GCLogFileSize：设置滚动日志文件的大小，必须大于8K，默认也是8K。<br>
--XX:+PrintGCCause：打印GC发生的原因，默认打开。<br>
+-XX:+PrintGC：打印GC信息(建议配置)。<br>
+-XX:+PrintGCDetails：打印GC详细信息（比上面多打印用户、系统在GC中的耗时，每个的回收前后的值等，建议配置）<br>
+-XX:+PrintGCDateStamps：GC日志按照年月日打印，否则打印的是进程启动后的时间，不利于定位问题(建议配置)。<br>
+-XX:+PrintHeapAtGC：打印GC发生前的堆栈内存空间信息(建议配置)。<br>
+-XX:+HeapDumpOnOutOfMemoryError：在OOM后将内存堆栈导出(建议配置)。<br>
+-XX:HeapDumpPath=filePath：OOM后的内存堆栈信息导出到指定的位置(建议配置)。<br>
+-XX:ErrorFile：如果发生JVM错误(进程级错误)，将错误数据会保存到指定的位置。不配置则默认是./hs_err_pid%p.log(建议配置)。<br>
+-Xloggc：配置GC日志保存的文件路径，开启滚动可以在文件名中加%t参数(建议配置)。<br>
+-XX:+UseGCLogFileRotation：打开GC日志滚动记录功能，默认关闭(建议配置)。<br>
+-XX:NumberOfGCLogFiles：设置滚动日志文件的个数，必须大于等于1(建议配置)。<br>
+-XX:GCLogFileSize：设置滚动日志文件的大小，必须大于8K，默认也是8K(建议配置)。<br>
+-XX:+PrintGCCause：打印GC发生的原因，默认打开(建议配置)。<br>
+-XX:+PrintFLSStatistics：GC日志中输出`free list方式分配内存`后内存统计情况和碎片情况(建议配置)。<br>
+-XX:+PrintPromotionFailure：打印新生代对象晋升老生代失败的附加信息(建议配置)。<br>
+-XX:+PrintJNIGCStalls：打印进入临界区的线程信息。<br>
+-XX:+PrintReferenceGC：打印各种引用的处理时间(建议配置)。<br>
 
 打印相关的GC日志等信息或输出OOM内存堆信息
 
@@ -644,24 +648,25 @@ CMS在并发标记阶段，应用线程和GC线程是并发执行的，因此可
 
 #### 13.concurrent mode failure和promotion failed触发的Full GC有啥不同？
 
-concurrent mode failure触发的是foreground模式，会暂停整个应用，会将一些并行的阶段省掉做一次老年代收集，行为跟Serial-Old的一样，至于在这个过程中是否需要压缩，则需要看三个条件：
->- 我们设置了`-XX:+UseCMSCompactAtFullCollection`和`-XX:CMSFullGCsBeforeCompaction=N`，前者设置为true，后者默认是0，前者表示是在Full GC的时候执行压缩，后者表示是每隔多少个进行压缩，默认是0的话就是每次Full GC都压缩；
->- 用户调用了System.gc()，而且DisableExplicitGC没有开启；
->- young gen报告接下来如果做增量收集会失败。
+`concurrent mode failure`触发的是`foreground模式`，会暂停整个应用，会将一些并行的阶段省掉**做一次老年代收集**，行为跟`Serial Old`的一样，至于在这个过程中是否需要压缩，则需要看三个条件：
+>- 我们设置了`-XX:+UseCMSCompactAtFullCollection`和`-XX:CMSFullGCsBeforeCompaction=N`，前者设置为true，后者默认是0，前者表示是在Full GC的时候执行压缩，后者表示是每隔多少个进行压缩，默认是0的话就是每次`Full GC`都压缩；
+>- 用户调用了`System.gc()`，而且`-XX:+DisableExplicitGC`没有开启；
+>- `young gen`报告接下来如果做增量收集会失败。
 
-promotion failed触发的是我们常说的的Full GC，对年轻代和老年代都会回收，并进行整理。
+`promotion failed`触发的是我们常说的的`Full GC`，**对年轻代和老年代都会回收，并进行整理**。
 
 #### 14.promotion failed和concurrent mode failure的触发原因有啥不同？
 
->- promotion failed是说，担保机制确定老年代是否有足够的空间容纳新来的对象，如果担保机制说有，但是真正分配的时候发现由于碎片导致找不到连续的空间而失败；
->- concurrent mode failure是指并发周期还没执行完，用户线程就来请求比预留空间更大的空间了，即后台线程的收集没有赶上应用线程的分配速度。
+>- `promotion failed`是说，担保机制确定老年代是否有足够的空间容纳新来的对象，如果担保机制说有，但是真正分配的时候发现由于碎片导致找不到连续的空间而失败；
+>- `concurrent mode failure`是指并发周期还没执行完，用户线程就来请求比预留空间更大的空间了，即后台线程的收集没有赶上应用线程的分配速度。
 
 #### 15.CMS有哪两种GC实现方式？它们的区别是什么？触发条件是什么？
 
 `CMS GC`在实现上分成`foreground collector`和`background collector`。
 
 *** foreground collector ***
-`foreground collector`触发条件比较简单，一般是遇到对象分配但空间不够，就会直接触发 GC，来立即进行空间回收。采用的算法是`mark sweep`，不压缩（12小节有说明）。会暂停整个应用，做一次老年代收集，行为跟`Serial Old`一样。
+
+`foreground collector`触发条件比较简单，**一般是遇到对象分配但空间不够，就会直接触发GC**，来立即进行空间回收。采用的算法是`mark sweep`，不压缩（13小节有说明）。会暂停整个应用，做一次老年代收集，行为跟`Serial Old`一样。由于它会暂停应用并且进行，所以不需要再次执行`FinalRemark`阶段。
 
 *** background collector ***
 
@@ -670,7 +675,7 @@ promotion failed触发的是我们常说的的Full GC，对年轻代和老年代
 每次扫描过程中，先等`CMSWaitDuration`时间，然后再去进行一次`shouldConcurrentCollect`判断，看是否满足`CMS background collector`的触发条件。`CMSWaitDuration`默认时间是`2s`（经常会有业务遇到频繁的`CMS GC`，注意看每次`CMS GC`之间的时间间隔，如果是`2s`，那基本就可以断定是`CMS`的`background collector`）。
 
 其触发条件常见的有六种：
->- 1.`GC cause`是`gclocker`且配置了`GCLockerInvokesConcurrent`参数, 或者`GC cause`是`javalangsystemgc`（就是 System.gc()调用）且配置了`ExplicitGCInvokesConcurrent`参数；
+>- 1.`GC cause`是`gclocker`且配置了`GCLockerInvokesConcurrent`参数, 或者`GC cause`是`javalangsystemgc`（就是`System.gc()`调用）且配置了`ExplicitGCInvokesConcurrent`参数；
 >- 2.未配置`UseCMSInitiatingOccupancyOnly`时，会根据统计数据动态判断是否需要进行一次`CMS GC`。预测`CMS GC`完成所需要的时间大于预计的老年代将要填满的时间，则进行`GC`。 这些判断是需要基于历史的`CMS GC`统计指标，然而，第一次`CMS GC`时，统计数据还没有形成，是无效的，这时会跟据`Old Gen`的使用占比来判断是否要进行`GC`。那占多少比率，开始回收呢？（也就是`CMSBootstrapOccupancy`的值是多少呢？）答案是`50%`；
 >- 3.当`Old Gen`超过了`CMSInitiatingOccupancyFraction`配置的大小时，当`CMSInitiatingOccupancyFraction`参数配置值小于0时（注意，默认是 -1），是 “((100 - MinHeapFreeRatio) + (double)(tr * MinHeapFreeRatio) / 100.0) / 100.0”，不配置公式中的影响参数的情况下，默认是92%；
 >- 4.如果未超过上面的阈值条件，并且未设置`UseCMSInitiatingOccupancyOnly`，当`Old Gen`刚因为对象分配空间而进行扩容，且成功分配空间，这时会考虑进行一次`CMS GC`或者根据是否使用自适应`空闲chunk`链表并且分配失败来触发；
@@ -750,15 +755,15 @@ CMS回收的两个STW阶段，主要在`Init Mark`和`Final Remark`阶段，也�
 
 #### 20.请讲一讲G1的垃圾收集过程是怎样的？
 
-G1收集器的过程涵盖4个阶段，即年轻代GC、并发标记周期、混合收集、Full GC。
+G1收集器的过程涵盖4个阶段，即`年轻代GC`、`并发标记周期`、`混合收集`、`Full GC`。
 
-***年轻代GC***依然是由Eden区和Survivor两个区间组成，当Eden区间分配内存失败时，就触发了年轻代GC。在每一次年轻代回收暂停期间，G1 GC计算当前年轻代大小需要扩展或压缩的总量，例如增加或删除空闲空间、统计RSet大小、当前最大可用年轻代、当前最小可用年轻代、设置停顿目标等。因为，我们可以认为这个过程在回收停顿结束后是一个重新调整年轻代的过程。
+***年轻代GC***依然是由`Eden区`和`Survivor`两个区间组成，当`Eden`区间分配内存失败时，就触发了年轻代GC。在每一次年轻代回收暂停期间，`G1 GC`计算当前年轻代大小需要扩展或压缩的总量，例如增加或删除空闲空间、统计RSet大小、当前最大可用年轻代、当前最小可用年轻代、设置停顿目标等。因为，我们可以认为这个过程在回收停顿结束后是一个重新调整年轻代的过程。
 
 ***并发标记周期***的最终目标是在整个Java堆达到满载之前完成标记动作，同时为了确保Java应用线程可以并行运行，并行标记循环的内部标记任务被划分成了很多任务，这样可以做到并行执行。
 
-***混合收集***是成功完成并发标记周期后, g1 gc 从执行年轻代回收切换到执行混合回收。在混合回收中, g1 gc 可选择将一些老年代区域添加到将回收的 Eden 和幸存者区域集。添加的老年区域的确切数量由几个flag控制。g1 gc 回收足够数量的老年代区域 (通过多次混合回收) 后, g1 将恢复到执行年轻代回收, 直到下一个并发标记周期完成。
+***混合收集***是成功完成并发标记周期后, `g1 gc`从执行年轻代回收切换到执行混合回收。在混合回收中, `g1 gc`可选择将一些老年代区域添加到将回收的`Eden`和`Survivor`区域集。添加的老年区域的确切数量由几个flag控制。g1 gc 回收足够数量的老年代区域 (通过多次混合回收) 后，`g1`将恢复到执行年轻代回收, 直到下一个并发标记周期完成。
 
-***Full GC***如果在年轻代区间或者老年代区间执行拷贝存活对象操作的时候，找不到一个空闲的区间，就会在GC日志中看到诸如“to-space exhausted”这样的错误日志，则G1 GC会尝试去扩展可用的Java堆内存大小。如果扩展失败，G1 GC会触发它的失败保护机制并且启动单线程的Full GC动作。这个阶段，单线程会针对整个堆内存里的所有区间进行标记、清除、压缩等工作。
+***Full GC***如果在年轻代区间或者老年代区间执行拷贝存活对象操作的时候，找不到一个空闲的区间，就会在GC日志中看到诸如“to-space exhausted”这样的错误日志，则`G1 GC`会尝试去扩展可用的Java堆内存大小。如果扩展失败，`G1 GC`会触发它的失败保护机制并且启动单线程的`Full GC`动作。这个阶段，单线程会针对整个堆内存里的所有区间进行标记、清除、压缩等工作。
 
 #### 21.请讲一讲G1的并发标记周期的过程？
 
@@ -788,7 +793,7 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 -XX:MaxGCPauseMillis：指定最大停顿时间<br>
 -XX:ParallelGCThreads：设置并行回收时GC工作线程数量<br>
 -XX:InitiatingHeapOccupancyPercent：当整个堆使用率达到多少触发并发标记周期的执行，默认值45。<br>
--XX:G1HeapRegionSize：每个Region的大小，最小1M，最大32M<br>
+-XX:G1HeapRegionSize：每个Region的大小，最小1M，最大32M，默认是堆内存的 1/2000。<br>
 
 #### 24.为什么G1不维护年轻代到老年代的记忆集？
 
