@@ -1031,6 +1031,23 @@ select * from t where name='lisi';　
 
 解决也很简单：如果索引的列在`select`所需获得的列中或者根据一次索引查询就能获得记录就不需要回表。所以在建立索引的时候，考虑将需要查询的字段尽量建立在二级索引中，或者是查询的时候指定查询的字段，不要使用`select *`这种形式。
 
+#### 10.如何提高Mysql的性能，包括但不限定客户端优化等？
+
+- 01.对SQL语句中的条件字段添加索引；
+- 02.设计字段的时候尽量按照最符合要求的数据类型来设计；
+- 03.可以尝试着增大排序、随机读取等缓冲大小；
+- 04.提高机器内存，数据量可以尽量不要查过机器的物理内存，充分利用操作系统的文件缓冲；
+- 05.增大`InnoDB Buffer`的大小，一般建议为物理内存70%左右；
+- 06.数据量尽量维持比较矮的B+数，超过一定的数据量的时候建议做分表处理，减少数据与索引的大小；
+- 07.如果写入不是很频繁的话，可以尝试开启`SQL CACHE`来加快读查询；
+- 08.磁盘存储可以选择高速SSD磁盘；
+- 09.日志与数据磁盘分离；如binlog日志，error日志等可以存储到另一个磁盘；
+- 10.如果是InnoDB可以开启`innodb_file_per_table`，将每个表的索引和数据空间单独维护，减少文件IO冲突；
+- 11.定期执行`optimize table`，减少表文件空洞，增加查询速度；
+- 12.优化索引，尽量在更新语句等操作的时候走行锁；
+- 13.客户端可以尝试添加`rewriteBatchedStatements`参数，对SQL语句进行批处理；
+- 14.其他；
+
 ## 十、配置参数相关
 
 #### 1.sort_buffer_size参数作用？如何在线修改生效？
@@ -1040,7 +1057,58 @@ select * from t where name='lisi';　
 
 通过代码 set [global] sort_buffer_size=n 在线设置。
 
-## 十一、应用
+## 十一、Mysql连接客户端相关
+
+#### 1.rewriteBatchedStatements的有什么作用？
+
+MySQL的JDBC连接的url中要加`rewriteBatchedStatements`参数，并保证`5.1.13`以上版本的驱动，才能实现高性能的批量插入。MySQL JDBC驱动在默认情况下会无视`executeBatch()`语句，把我们期望批量执行的一组sql语句拆散，一条一条地发给MySQL数据库，批量插入实际上是单条插入，直接造成较低的性能。只有把`rewriteBatchedStatements`参数置为true, 驱动才会帮你批量执行SQL，另外这个选项对`INSERT/UPDATE/DELETE`都有效；
+
+批处理的优点在于，多条SQL一并发送给数据库，让数据库批量执行，而不是发送一条就执行一条。因此，在网络上的开销就会大大降低。
+
+如果这样调用：
+```
+for(int i = 0; i < 1000; i++){  
+    xxxDAO.insertData();  
+}
+```
+
+则会连接数据库1000次，释放连接1000次，效率特别低。
+
+用批处理就可以提高效率，所有SQL语句都保存起来，一次连接，全部执行后，一次释放连接。
+```
+public static void batchInsert() throws SQLException {  
+    ……  
+    String sql = "INSERT INTO USER(USERNAME, PASSWORD) VALUES(?, ?);  
+    prepareStatement = conection.prepareStatement(sql);  
+    for(int I = 0; I < 10000; i++) {
+        ps.setString(1,”name”+i);
+        ps.setString(2,”pwd”+i);
+        ps.addBatch();
+    }
+    int[] num = prepareStatement.executeBatch();
+    ……
+    conection.commit();
+    conection.close();
+}
+```
+
+但是，MySQL的JDBC驱动在默认情况下会无视`executeBatch()`语句，把我们期望批量执行的一组SQL拆散，一条一条地发给MySQL数据库，直接造成较低的性能。
+
+只有把`rewriteBatchedStatements`参数置为true，驱动才会帮你批量执行SQL`（jdbc:mysql://ip:port/db?rewriteBatchedStatements=true）`。**这个选项对INSERT/UPDATE/DELETE都有效，只不过对INSERT它为会预先重排一下SQL语句。**
+
+`rewriteBatchedStatements`设置为false或不设置：
+- `batchDelete`(10条记录)  =>  发送10次delete请求
+- `batchUpdate`(10条记录)  =>  发送10次update请求
+- `batchInsert`(10条记录)  =>  发送10次insert请求
+
+rewriteBatchedStatements设置为true：
+- `batchDelete`(10条记录) => 发送一次请求，内容为`delete from t where id = 1; delete from t where id = 2; delete from t where id = 3; …`
+- `batchUpdate`(10条记录) => 发送一次请求，内容为`update t set … where id = 1; update t set … where id = 2; update t set … where id = 3 …`
+- `batchInsert`(10条记录) => 发送一次请求，内容为`insert into t (…) values (…) , (…), (…)`
+
+需要注意的是，即使`rewriteBatchedStatements=true`，`batchDelete()`和`batchUpdate()`也不一定会走批量：**当batchSize <= 3时，驱动会宁愿一条一条地执行SQL。所以，如果你想验证rewriteBatchedStatements在你的系统里是否已经生效，记得要使用较大的batch。**
+
+## 十二、应用
 
 #### 1.一写多读的场景，多写多读的场景？
 
