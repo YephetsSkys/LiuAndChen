@@ -363,13 +363,38 @@ Record lock, heap no 6 PHYSICAL RECORD: n_fields 2; compact format; info bits 0
 
 ##### Next-Key Locks：
 
-Next-key锁是记录锁和间隙锁的组合，它指的是加在某条记录以及这条记录前面间隙上的锁。
+Next-key锁是记录锁和间隙锁的组合，它指的是加在某条记录以及这条记录前面间隙上的锁。如，表中有4,7，我要更新7的数据，那么Next-Key则为(4-7]，另一个事物不能在这个区间内插入新的数据。
+
+Next-Key还可能会加载`supremum pseudo-record`上，意即无穷大的记录上。比如我通过某个索引`>=10`的数据的，但是现在数据没有10以上的数据，则会将Next-Key加在了可能存在的值的前面的间隙，则锁定了区间(18, 正无穷]。
 
 ##### 插入意向锁（Insert Intention）
 
 插入意向锁是在插入一行记录操作之前设置的一种间隙锁，这个锁释放了一种插入方式的信号，亦即多个事务在相同的索引间隙插入时如果不是插入间隙中相同的位置就不需要互相等待。
 
-假设有索引值4、7，几个不同的事务准备插入5、6，每个锁都在获得插入行的独占锁之前用插入意向锁各自锁住了4、7之间的间隙，但是不阻塞对方因为插入行不冲突。
+假设有索引值4、7，几个不同的事务准备插入5、6，每个锁都在获得插入行的独占锁之前用插入意向锁各自锁住了(5/6)-7之间的间隙，但是不阻塞对方因为插入行不冲突。
+
+插入意向锁是一种区间锁，多个事务向同一个`index gap`并发进行插入时，多个事务无需相互等待。该锁的范围是(插入值, 向下的一个索引值)。如前面的列入，假如存在索引值10，那么插入4的插入意向锁锁定4-10，插入7的时候插入意向锁锁定7-10，互相之间不会产生冲突。
+
+如果先有插入意向锁，则与间隙锁不会产生冲突。但是如果先有间隙锁，则会与插入意向锁冲突。
+
+##### 自增锁（AUTO-INC Locks）
+
+表锁。向带有`AUTO_INCREMENT`列的表时插入数据行时，事务需要首先获取到该表的`AUTO-INC`表级锁，以便可以生成连续的自增值。插入语句开始时请求该锁，插入语句结束后释放该锁(***注意：是语句结束后，而不是事务结束后***)。
+
+insert语句包括下面几种：
+- `simple-inserts`，待插入记录的条数，提前就可以确定(语句初始被处理时就可以提前确定)因此所需要的自增值的个数也就可以提前被确定。包括：不带嵌入子查询的单行或多行的`insert`,`replace`。不过，`insert ... on duplicate key update`不是。
+- `bulk-inserts`，待插入记录的条数，不能提前确定，因此所需要的自增值的个数 也就无法提前确定。包括：`insert ... select`,`replace ... select`,`load data`。在这种情况下，`InnoDB`只能每次一行的分配自增值。每当一个数据行被处理时，`InnoDB`为该行`AUTO_INCREMENT`列分配一个自增值。
+- `mixed-mode-inserts`，也是`simple-inserts`语句，但是指定了某些(非全部)自增列的值。也就是说，待插入记录的条数提前能知道，但，指定了部分的自增列的值。如：`INSERT INTO t1 (c1,c2) VALUES (1,'a'), (NULL,'b'), (5,'c'), (NULL,'d')`，`INSERT ... ON DUPLICATE KEY UPDATE`也是`mixed-mode`，最坏情况下，它就是`INSERT`紧跟着一个`UPDATE`，此时，为`AUTO_INCREMENT`列所分配的值在`UPDATE`阶段可能用到，也可能用不到。
+
+系统变量`innodb_autoinc_lock_mode`，它有三个候选值0，1，和2。
+
+`8.0.3`之前，`默认值是1`，即`连续性的锁定模式(consecutive lock mode)`;`8.0.3`及之后`默认值是2`，即`交织性锁定模式(interleaved lock mode)`。
+
+- 当`innodb_autoinc_lock_mode=0`时，`simple-inserts`和`bulk-inserts`语句都需要获取到`AUTO-INC表级锁`;
+- 当`innodb_autoinc_lock_mode=1`时，如果插入行的条数可以提前确定，则***无需获得AUTO-INC表级锁***;如果插入行的条数无法提前确定，则就***需要获取AUTO-INC表级锁***。因此，`simple-inserts`和`mixed-mode inserts`都无需AUTO-INC表级锁，此时，使用轻量级的mutex来互斥获得自增值;`bulk-inserts`需要获取到AUTO-INC表级锁;
+- 当`innodb_autoinc_lock_mode=2`时，完全***不再使用AUTO-INC表级锁***;
+
+***通常innodb_autoinc_lock_mode=1，而且，我们日常开发中用到大都是simple-inserts，此时根本就不使用AUTO-INC表级锁，所以，AUTO-INC表级锁用到的并不多哦。***
 
 #### 4.什么是死锁？锁等待？通过数据库哪些表可以监控？
 
