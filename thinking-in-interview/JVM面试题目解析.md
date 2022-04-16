@@ -117,11 +117,11 @@ Java内存模型规定了所有的变量都存储在主内存中，每条线程�
 
 #### 11.双亲委派机制的好处是什么？
 
-采用双亲委派模式的是好处是Java类随着它的类加载器一起具备了一种带有优先级的层次关系，通过这种层级关可以避免类的重复加载，当父亲已经加载了该类时，就没有必要子ClassLoader再加载一次。其次是考虑到安全因素，java核心api中定义类型不会被随意替换，假设通过网络传递一个名为java.lang.Integer的类，通过双亲委托模式传递到启动类加载器，而启动类加载器在核心Java API发现这个名字的类，发现该类已被加载，并不会重新加载网络传递的过来的java.lang.Integer，而直接返回已加载过的Integer.class，这样便可以防止核心API库被随意篡改。
+采用双亲委派模式的是好处是Java类随着它的类加载器一起具备了一种带有优先级的层次关系，通过这种层级关可以避免类的重复加载，当父亲已经加载了该类时，就没有必要子ClassLoader再加载一次。其次是考虑到安全因素，java核心api中定义类型不会被随意替换，假设通过网络传递一个名为java.lang.Integer的类，通过双亲委托模式传递到启动类加载器，而启动类加载器在核心Java API发现这个名字的类，发现该类已被加载，并不会重新加载网络传递的过来的java.lang.Integer，而直接返回已加载过的`Integer.class`，这样便可以防止核心API库被随意篡改。
 
 双亲委派机制的作用总结为：
-- 防止重复加载同一个.class。通过委托去向上面问一问，加载过了，就不用再加载一遍。保证数据安全。
-- 保证核心.class不能被篡改。通过委托方式，不会去篡改核心.clas，即使篡改也不会去加载，即使加载也不会是同一个.class对象了。不同的加载器加载同一个.class也不是同一个Class对象。这样保证了Class执行安全。
+- 防止重复加载同一个`Class`。通过委托去向上面问一问，加载过了，就不用再加载一遍。保证数据安全。
+- 保证核心`Class`不能被篡改。通过委托方式，不会去篡改核心`Class`，即使篡改也不会去加载，即使加载也不会是同一个`Class`对象了。不同的加载器加载同一个`Class`也不是同一个`Class`对象。这样保证了`Class`执行安全。
 
 #### 12.ClassLoader类加载器重要的4个方法介绍一下。
 
@@ -179,14 +179,14 @@ Java内存模型规定了所有的变量都存储在主内存中，每条线程�
 java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX:SurvivorRatio=4 -XX:MaxTenuringThreshold=0
 ```
 
--Xmx3550m： 最大堆大小为3550m。<br>
--Xms3550m： 设置初始堆大小为3550m。<br>
--Xmn2g： 设置年轻代大小为2g。<br>
--Xss128k： 每个线程的堆栈大小为128k。<br>
--XX:MaxPermSize： 设置持久代大小为16m<br>
--XX:NewRatio=4: 设置年轻代（包括Eden和两个Survivor区）与年老代的比值（除去持久代）。<br>
--XX:SurvivorRatio=4： 设置年轻代中Eden区与Survivor区的大小比值。设置为4，则两个Survivor区与一个Eden区的比值为2:4，一个Survivor区占整个年轻代的1/6<br>
--XX:MaxTenuringThreshold=0： 设置垃圾最大年龄。如果设置为0的话，则年轻代对象不经过Survivor区，直接进入年老代。<br>
+- `-Xmx3550m`： 最大堆大小为3550m。
+- `-Xms3550m`： 设置初始堆大小为3550m。
+- `-Xmn2g`： 设置年轻代大小为2g。
+- `-Xss128k`： 每个线程的堆栈大小为128k。
+- `-XX:MaxPermSize`： 设置持久代大小为16m。
+- `-XX:NewRatio=4`: 设置年轻代（包括Eden和两个Survivor区）与年老代的比值（除去持久代）。
+- `-XX:SurvivorRatio=4`： 设置年轻代中Eden区与Survivor区的大小比值。设置为4，则两个Survivor区与一个Eden区的比值为2:4，一个Survivor区占整个年轻代的1/6。
+- `-XX:MaxTenuringThreshold=0`： 设置垃圾最大年龄。如果设置为0的话，则年轻代对象不经过Survivor区，直接进入年老代。
 
 2) 垃圾收集配置相关
 
@@ -194,31 +194,31 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 -XX:+UseSerialGC -XX:+UseParallelGC -XX:ParallelGCThreads=20 -XX:+UseConcMarkSweepGC -XX:CMSFullGCsBeforeCompaction=5 -XX:+UseCMSCompactAtFullCollection
 ```
 
--XX:+UseSerialGC：选择单线程垃圾收集器。
--XX:+UseParallelGC： 选择垃圾收集器为并行收集器。<br>
--XX:ParallelGCThreads=20： 配置并行收集器的线程数。<br>
--XX:+UseConcMarkSweepGC： 设置年老代为并发收集。<br>
--XX:CMSFullGCsBeforeCompaction：由于并发收集器不对内存空间进行压缩、整理，所以运行一段时间以后会产生“碎片”，使得运行效率降低。此值设置运行多少次GC以后对内存空间进行压缩、整理。<br>
--XX:+UseCMSCompactAtFullCollection： 打开对年老代的压缩。可能会影响性能，但是可以消除碎片。<br>
+- `-XX:+UseSerialGC`：选择单线程垃圾收集器。
+- `-XX:+UseParallelGC`： 选择垃圾收集器为并行收集器。
+- `-XX:ParallelGCThreads=20`： 配置并行收集器的线程数。
+- `-XX:+UseConcMarkSweepGC`： 设置年老代为并发收集。
+- `-XX:CMSFullGCsBeforeCompaction`：由于并发收集器不对内存空间进行压缩、整理，所以运行一段时间以后会产生“碎片”，使得运行效率降低。此值设置运行多少次GC以后对内存空间进行压缩、整理。
+- `-XX:+UseCMSCompactAtFullCollection`： 打开对年老代的压缩。可能会影响性能，但是可以消除碎片。
 
 3) 辅助信息相关
 
--XX:+PrintGC：打印GC信息(建议配置)。<br>
--XX:+PrintGCDetails：打印GC详细信息（比上面多打印用户、系统在GC中的耗时，每个的回收前后的值等，建议配置）<br>
--XX:+PrintGCDateStamps：GC日志按照年月日打印，否则打印的是进程启动后的时间，不利于定位问题(建议配置)。<br>
--XX:+PrintHeapAtGC：打印GC发生前的堆栈内存空间信息(建议配置)。<br>
--XX:+HeapDumpOnOutOfMemoryError：在OOM后将内存堆栈导出(建议配置)。<br>
--XX:HeapDumpPath=filePath：OOM后的内存堆栈信息导出到指定的位置(建议配置)。<br>
--XX:ErrorFile：如果发生JVM错误(进程级错误)，将错误数据会保存到指定的位置。不配置则默认是./hs_err_pid%p.log(建议配置)。<br>
--Xloggc：配置GC日志保存的文件路径，开启滚动可以在文件名中加%t参数(建议配置)。<br>
--XX:+UseGCLogFileRotation：打开GC日志滚动记录功能，默认关闭(建议配置)。<br>
--XX:NumberOfGCLogFiles：设置滚动日志文件的个数，必须大于等于1(建议配置)。<br>
--XX:GCLogFileSize：设置滚动日志文件的大小，必须大于8K，默认也是8K(建议配置)。<br>
--XX:+PrintGCCause：打印GC发生的原因，默认打开(建议配置)。<br>
--XX:+PrintFLSStatistics：GC日志中输出`free list方式分配内存`后内存统计情况和碎片情况(建议配置)。<br>
--XX:+PrintPromotionFailure：打印新生代对象晋升老生代失败的附加信息(建议配置)。<br>
--XX:+PrintJNIGCStalls：打印进入临界区的线程信息。<br>
--XX:+PrintReferenceGC：打印各种引用的处理时间(建议配置)。<br>
+- `-XX:+PrintGC`：打印GC信息(建议配置)。
+- `-XX:+PrintGCDetails`：打印GC详细信息（比上面多打印用户、系统在GC中的耗时，每个的回收前后的值等，建议配置）
+- `-XX:+PrintGCDateStamps`：GC日志按照年月日打印，否则打印的是进程启动后的时间，不利于定位问题(建议配置)。
+- `-XX:+PrintHeapAtGC`：打印GC发生前的堆栈内存空间信息(建议配置)。
+- `-XX:+HeapDumpOnOutOfMemoryError`：在OOM后将内存堆栈导出(建议配置)。
+- `-XX:HeapDumpPath=filePath`：OOM后的内存堆栈信息导出到指定的位置(建议配置)。
+- `-XX:ErrorFile`：如果发生JVM错误(进程级错误)，将错误数据会保存到指定的位置。不配置则默认是./hs_err_pid%p.log(建议配置)。
+- `-Xloggc`：配置GC日志保存的文件路径，开启滚动可以在文件名中加%t参数(建议配置)。
+- `-XX:+UseGCLogFileRotation`：打开GC日志滚动记录功能，默认关闭(建议配置)。
+- `-XX:NumberOfGCLogFiles`：设置滚动日志文件的个数，必须大于等于1(建议配置)。
+- `-XX:GCLogFileSize`：设置滚动日志文件的大小，必须大于8K，默认也是8K(建议配置)。
+- `-XX:+PrintGCCause`：打印GC发生的原因，默认打开(建议配置)。
+- `-XX:+PrintFLSStatistics`：GC日志中输出`free list方式分配内存`后内存统计情况和碎片情况(建议配置)。
+- `-XX:+PrintPromotionFailure`：打印新生代对象晋升老生代失败的附加信息(建议配置)。
+- `-XX:+PrintJNIGCStalls`：打印进入临界区的线程信息。
+- `-XX:+PrintReferenceGC`：打印各种引用的处理时间(建议配置)。
 
 打印相关的GC日志等信息或输出OOM内存堆信息
 
