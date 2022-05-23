@@ -388,3 +388,38 @@ TCP/IP协议中针对TCP默认开启了`Nagle`算法。`Nagle`算法通过减少
 这里还隐藏了一个问题，**就是A块数据的ACK为什么40ms之后才收到？** 这是因为`TCP/IP`中不仅仅有`Nagle`算法，还有一个ACK延迟机制。**当Server端收到数据之后，它并不会马上向client端发送ACK，而是会将ACK的发送延迟一段时间（假设为t），它希望在t时间内server端会向client端发送应答数据，这样ACK就能够和应答数据一起发送，就像是应答数据捎带着ACK过去。** t大概就是`40ms`。这就解释了为什么'/r/n'(B块)总是在A块之后`40ms`才发出。
 
 觉着`Nagle`算法太捣乱了，那么可以通过设置`TCP_NODELAY`将其禁用。当然，**更合理的方案还是应该使用一次大数据的写操作，而不是多次小数据的写操作。**
+
+#### 8.用户在初始化TCP连接的时候，backlog参数配置有什么用？
+
+当服务端调用`listen`函数时，`TCP`的状态被从`CLOSE`状态变为`LISTEN`，于此同时内核创建了两个队列：
+- `半连接队列（Incomplete connection queue）`，又称`SYN队列`；
+- `全连接队列（Completed connection queue）`，又称`Accept队列`。
+
+当客户端发起`SYN`到服务端，服务端收到以后会回`ACK`和自己的`SYN`。这时服务端这边的`TCP`从`listen`状态变为`SYN_RCVD (SYN Received)`，此时会将这个连接信息放入「半连接队列」，半连接队列也被称为`SYN Queue`。`backlog`可以决定「半连接队列」的大小。
+
+半连接队列大小计算参数与以下三个相关：
+- 用户层`listen`传入的`backlog`；
+- 系统变量`net.ipv4.tcp_max_syn_backlog`，默认值为`128`；
+- 系统变量`net.core.somaxconn`，默认值为`128`；
+
+如果用户传入的`backlog`值大于系统变量`net.core.somaxconn`的值，用户设置的`backlog`不会生效，使用系统变量值，默认为`128`。
+
+接下来会将上面步骤计算出来的值与`net.ipv4.tcp_max_syn_backlog`值进行比较，选取较小值，再与`8`取较大值，再将其`+1`向上取求`最接近的最大2的指数次幂`。以下是几个`somaxconn`、`max_syn_backlog`、`backlog`三者之间不同组合的最终半连接队列大小值。
+
+| somaxconn | max_syn_backlog | backlog | 队列大小 |
+| --- | --- | --- | --- |
+| 128 | 128 | 5 | 16 |
+| 128 | 128 | 10 | 16 |
+| 128 | 128 | 50 | 64 |
+| 128 | 128 | 128 | 256 |
+| 128 | 128 | 5000 | 256 |
+| 1024 | 128 | 128 | 256 |
+| 1024 | 1024 | 128 | 256 |
+| 4096 | 4096 | 128 | 256 |
+| 4096 | 4096 | 4096 | 8192 |
+
+所以盲目调大`listen`的`backlog`对最终半连接队列的大小不会有影响。在`listen`的`backlog`不变的情况下，盲目调大`somaxconn`和`max_syn_backlog`对最终半连接队列的大小不会有影响。
+
+「全连接队列」包含了服务端所有完成了三次握手，但是还未被应用调用`accept`取走的连接队列。此时的`socket`处于`ESTABLISHED`状态。每次应用调用`accept()`函数会移除队列头的连接。如果队列为空，`accept()`通常会阻塞。全连接队列也被称为`Accept队列`。`backlog`也可以决定「全连接队列」的大小。如果全连接队列满，内核会舍弃掉`client`发过来的`ack`。
+
+全连接队列的大小是`listen`传入的`backlog`和`somaxconn`中的较小值。真正全连接队列大小是`backlog + 1`（较小值）。当你指定`backlog`值为1时，能容纳的连接个数会是2。
