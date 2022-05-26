@@ -76,3 +76,11 @@ protected Object getSingleton(String beanName, boolean allowEarlyReference) {
 }
 ```
 
+#### 5.说一说springboot自动装配原理
+
+![avatar](img/spring/springboot自动装配原理.jpg)
+
+- `springboot`自动装配的本质就是通过`spring`去读取`META-INF/spring.factories`中保存的配置类文件然后加载`bean`定义的过程；
+- 在启动类上`@SpringBootApplication`中通过`@EnableAutoConfiguration`注解来加载配置信息，通过`@Import(AutoConfigurationImportSelector.class)`注解，在类`AutoConfigurationImportSelector`中实现`selectImports`方法来加载`META-INF/spring.factories`配置；
+- 如果是标了`@Configuration`注解，就是批量加载了里面的`bean`定义；
+- 通过配置文件获取对应的批量配置类，然后通过配置类批量加载`bean`定义，只要有写好的配置文件`spring.factories`就实现了自动。
