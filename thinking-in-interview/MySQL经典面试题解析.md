@@ -375,6 +375,18 @@ WHERE t.NAME LIKE '%index_page_merge%';
 - 唯一键冲突（由于表的自增值已变，但是主键发生冲突没插进去，下一次插入主键=现在变了的子增值+1，所以不连续）；
 - `INSERT IGNORE INTO`、`ON DUPLICATE KEY UPDATE`、`REPLACE INTO`等语句如果发生了替换或者未插入成功数据等也会造成主键的不连续；
 
+#### 21.为什么有时候innodb没有走我们认为的区分度比较高的索引，而选择了其他查询慢的索引？
+
+我们通过`explain`查询执行计划的时候，会发现`innodb`引擎选择了区分度很低的索引，造成SQL性能缓慢。其中主要的原因就是统计信息是不准确的。
+
+`InnoDB`是如何收集表的统计信息？一般是通过显式的方式或者系统自动采集表的统计信息。
+
+第一种是通过开启参数`innodb_stats_auto_recalc=on`(默认也是打开的) 以便在表的数据发生重大变化以后来自动收集表的统计信息。比如当表中的`10%`的行发生变化，`InnoDB`将重新计算统计信息。第二种是我们可以使用`ANALYZE TABLE`显式地重新计算统计信息。
+
+`InnoDB`使用随机采样技术的方法采集统计信息--随机抽取索引页（随机抽样并不是完全随机的，），估计索引的基数。参数`innodb_stats_persistent_sample_pages`控制采样页面的数量（默认值20）。参考[https://dev.mysql.com/doc/refman/5.7/en/innodb-persistent-stats.html](https://dev.mysql.com/doc/refman/5.7/en/innodb-persistent-stats.html)
+
+我们知道当一个表的索引发生分裂时，无论是叶子页数，总记录数的比值变得越来越不准确，因此`stat_value`的计算可能不正确。一旦发生这种情况，除非更改参数`innodb_stats_persistent_sample_pages`或重建索引，否则显式重新计算（手动运行`ANALYZE TABLE`）将无法生成正确的`stat_value`。
+
 ## 四、锁相关
 
 #### 1.你对MySQL锁是怎么理解的？
