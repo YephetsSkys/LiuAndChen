@@ -255,6 +255,32 @@ LISTEN     0      1024          127.0.0.1:9229          *:*
 
 如果`Recv-Q`的大小超过`Send-Q`，就说明发生了`accpet`队列满的情况。解决办法就是需要调大`accpet`队列的最大长度，调大的方式是通过调大`backlog`以及`somaxconn`参数。
 
+##### 3) 短时间内大量并发建连，队列空间不足以存放收到的SYN包
+
+#### 10.全连接队列溢出的场景？
+
+- 短时间内大量连接完成三次握手，队列放不下；
+- 业务层accept()速度较慢，全连接队列积压。
+
+#### 11.如何判断当前服务是否存在半连接队列或全连接队列溢出？
+
+`netstat -s |grep -E 'LISTEN|overflow'`命令可以查看：
+
+```
+8515 times the listen queue of a socket overflowed // 全连接队列溢出的累计次数
+60916 SYNs to LISTEN sockets dropped               // 半连接队列溢出的累计次数
+```
+
+#### 12.如何减少半连接队列或全连接队列溢出的？
+
+可以尝试增加半连接队列/全连接队列的大小。
+
+半连接队列大小主要受两个参数的影响，`backlog`和`tcp_max_syn_backlog`。队列大小会取两者的最小值，同时必须大于等于8，并将得到的结果进行`roundup_pow_of_two`运算，该操作会找到当前数值的二进制最高位数n，然后以1循环右移n次作为结果集，简单理解就是按2的倍数向上取整。半连接队列大小 = `roundup_pow_of_two(min(backlog, tcp_max_syn_backlog))`
+
+全连接队列大小受两个参数影响，`backlog`和`sysctl_somaxconn`。队列大小会设置为`backlog`和`somaxconn`中较小的值。全连接队列大小 = `min(somaxconn, backlog)`。
+
+可以调整上面说的参数来调整队列的大小。
+
 ## 三、四次挥手
 
 #### 1.什么是四次挥手？
