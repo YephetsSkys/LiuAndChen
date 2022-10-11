@@ -80,7 +80,43 @@ protected Object getSingleton(String beanName, boolean allowEarlyReference) {
 
 ![avatar](img/spring/springboot自动装配原理.jpg)
 
+`Spring`中的`SPI`主要是利用`META-INF/spring.factories`文件来实现的，文件内容由多个`k = list(v)`的格式组成，比如：
+```
+org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
+  com.dtp.starter.adapter.dubbo.autoconfigure.ApacheDubboTpAutoConfiguration,\
+  com.dtp.starter.adapter.dubbo.autoconfigure.AlibabaDubboTpAutoConfiguration
+
+org.springframework.boot.env.EnvironmentPostProcessor=\
+  com.dtp.starter.zookeeper.autoconfigure.ZkConfigEnvironmentProcessor
+```
+
+这些`spring.factories`文件可能是位于多个`jar`包中，`Spring`容器启动时会通过`ClassLoader.getResources()`获取这些`spring.factories`文件的全路径。然后遍历路径以字节流的形式读取所有的`k = list(v)`封装到到一个`Map`中，`key`为接口全限定类名，`value`为所有实现类的全限定类名列表。
+
 - `springboot`自动装配的本质就是通过`spring`去读取`META-INF/spring.factories`中保存的配置类文件然后加载`bean`定义的过程；
 - 在启动类上`@SpringBootApplication`中通过`@EnableAutoConfiguration`注解来加载配置信息，通过`@Import(AutoConfigurationImportSelector.class)`注解，在类`AutoConfigurationImportSelector`中实现`selectImports`方法来加载`META-INF/spring.factories`配置；
 - 如果是标了`@Configuration`注解，就是批量加载了里面的`bean`定义；
 - 通过配置文件获取对应的批量配置类，然后通过配置类批量加载`bean`定义，只要有写好的配置文件`spring.factories`就实现了自动。
+
+#### 6.spring的扩展点介绍
+
+`Spring`提供了很多的扩展点，第三方框架整合`Spring`其实大多也都是基于这些扩展点来做的。
+
+这些扩展包括但不限于以下接口：
+
+- `BeanFactoryPostProcessor`：在`Bean`实例化之前对`BeanDefinition`进行修改；
+- `BeanPostProcessor`：在`Bean`初始化前后对`Bean`进行一些修改包装增强，比如返回代理对象；
+- `Aware`：一个标记接口，实现该接口及子接口的类会收到`Spring`的通知回调，赋予某种`Spring`框架的能力，比如`ApplicationContextAware`、`EnvironmentAware`等；
+- `ApplicationContextInitializer`：在上下文准备阶段，容器刷新之前做一些初始化工作，比如我们常用的配置中心`client`基本都是继承该初始化器，在容器刷新前将配置从远程拉到本地，然后封装成`PropertySource`放到`Environment`中供使用；
+- `ApplicationListener`：`Spring`事件机制，监听特定的应用事件（`ApplicationEvent`），观察者模式的一种实现；
+- `FactoryBean`：用来自定义`Bean`的创建逻辑（`Mybatis`、`Feign`等等）；
+- `ImportBeanDefinitionRegistrar`：定义`@EnableXXX`注解，在注解上`Import`了一个`ImportBeanDefinitionRegistrar`，实现注册`BeanDefinition`到容器中；
+- `InitializingBean`：在`Bean`初始化时会调用执行一些初始化逻辑；
+- `ApplicationRunner`/`CommandLineRunner`：容器启动后回调，执行一些初始化工作；
+- `BeanDefinitionRegistryPostProcessor`：读取项目中的`beanDefinition`之后执行，提供一个补充的扩展点。你可以在这里动态注册自己的`beanDefinition`，可以加载`classpath`之外的`bean`。
+- `InstantiationAwareBeanPostProcessor`：该接口继承了`BeanPostProcess`接口，`BeanPostProcess`接口只在`bean`的初始化阶段进行扩展（注入`spring`上下文前后），而此接口在此基础上增加了3个方法，把可扩展的范围增加了实例化阶段和属性注入阶段。
+- `BeanFactoryAware`：这个类只有一个触发点，发生在`bean`的实例化之后，注入属性之前，也就是`Setter`之前；
+- `ApplicationContextAwareProcessor`：该类本身并没有扩展点，但是该类内部却有6个扩展点可供实现 ，这些类触发的时机在`bean`实例化之后，初始化之前；
+- `BeanNameAware`：用户可以扩展这个点，在初始化`bean`之前拿到`spring`容器中注册的的`beanName`，来自行修改这个`beanName`的值；
+- `InitializingBean`：为`bean`提供了初始化方法的方式，它只包括`afterPropertiesSet`方法，凡是继承该接口的类，在初始化`bean`的时候都会执行该方法。这个扩展点的触发时机在`postProcessAfterInitialization`之前。用户实现此接口，来进行系统启动的时候一些业务指标的初始化工作；
+- `SmartInitializingSingleton`：这个接口中只有一个方法`afterSingletonsInstantiated`，其作用是是在`spring`容器管理的所有单例对象（非懒加载对象）初始化完成之后调用的回调接口。其触发时机为`postProcessAfterInitialization`之后。用户可以扩展此接口在对所有单例对象初始化完毕后，做一些后置的业务处理；
+- `DisposableBean`：这个扩展点也只有一个方法`destroy()`，当此对象销毁时，会自动执行这个方法；
