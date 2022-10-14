@@ -649,7 +649,7 @@ CMS在并发标记阶段，应用线程和GC线程是并发执行的，因此可
 #### 13.concurrent mode failure和promotion failed触发的Full GC有啥不同？
 
 `concurrent mode failure`触发的是`foreground模式`，会暂停整个应用，会将一些并行的阶段省掉**做一次老年代收集**，行为跟`Serial Old`的一样，至于在这个过程中是否需要压缩，则需要看三个条件：
->- 我们设置了`-XX:+UseCMSCompactAtFullCollection`和`-XX:CMSFullGCsBeforeCompaction=N`，前者设置为true，后者默认是0，前者表示是在Full GC的时候执行压缩，后者表示是每隔多少个进行压缩，默认是0的话就是每次`Full GC`都压缩；
+>- 我们设置了`-XX:+UseCMSCompactAtFullCollection`和`-XX:CMSFullGCsBeforeCompaction=N`，前者设置为true，后者默认是0，前者表示是在Full GC的时候执行压缩，后者表示是每隔多少次不压缩的`Full GC`之后执行一次带压缩的`Full GC`，默认是0的话就是每次`Full GC`都压缩；
 >- 用户调用了`System.gc()`，而且`-XX:+DisableExplicitGC`没有开启；
 >- `young gen`报告接下来如果做增量收集会失败。
 
@@ -753,7 +753,67 @@ CMS回收的两个STW阶段，主要在`Init Mark`和`Final Remark`阶段，也�
 - 如果开启了`-XX:+CMSClassUnloadingEnabled`会对类元信息进行回收处理，此处也是造成耗时的一大原因。如果我们没有大量动态类生成，可以将此参数关闭掉或者配置`-XX:CMSClassUnloadingMaxInterval=N`来指定发生N次`CMS`回收后进行一次类卸载。
 - 如果在`Concurrent Mark`阶段会将并发标记期间因用户程序继续运作而导致标记变动的那一部分对象的标记记录，会把上述对象所在的`Card`标识为`Dirty`，后续只需扫描这些`Dirty Card`的对象，避免扫描整个老年代，在最终标记阶段会重新扫描这些对象，造成耗时加长。
 
-#### 20.请讲一讲G1的垃圾收集过程是怎样的？
+#### 20.CMS回收的GC日志特征？
+
+***CMS Background GC (到达触发阈值，只回收老年代，并发GC，不进行内存整理)***
+```
+2022-10-14T14:18:03.134+0800: [GC (CMS Initial Mark) [1 CMS-initial-mark: 9747K(10240K)] 9747K(27328K), 0.0005460 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+2022-10-14T14:18:03.134+0800: [CMS-concurrent-mark-start]
+2022-10-14T14:18:03.135+0800: [CMS-concurrent-mark: 0.001/0.001 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+2022-10-14T14:18:03.135+0800: [CMS-concurrent-preclean-start]
+2022-10-14T14:18:03.141+0800: [CMS-concurrent-preclean: 0.006/0.006 secs] [Times: user=0.00 sys=0.00, real=0.01 secs] 
+2022-10-14T14:18:03.142+0800: [GC (CMS Final Remark) [YG occupancy: 0 K (17088 K)]2022-10-14T14:18:03.142+0800: [Rescan (parallel) , 0.0004897 secs]2022-10-14T14:18:03.142+0800: [weak refs processing, 0.0047440 secs]2022-10-14T14:18:03.146+0800: [class unloading, 0.0003178 secs]2022-10-14T14:18:03.147+0800: [scrub symbol table, 0.0003008 secs]2022-10-14T14:18:03.147+0800: [scrub string table, 0.0002952 secs][1 CMS-remark: 9747K(10240K)] 9747K(27328K), 0.0065877 secs] [Times: user=0.00 sys=0.00, real=0.01 secs] 
+2022-10-14T14:18:03.148+0800: [CMS-concurrent-sweep-start]
+2022-10-14T14:18:03.148+0800: [CMS-concurrent-sweep: 0.000/0.000 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+2022-10-14T14:18:03.148+0800: [CMS-concurrent-reset-start]
+2022-10-14T14:18:03.148+0800: [CMS-concurrent-reset: 0.000/0.000 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+```
+
+***CMS Foreground GC (Old区内存分配的时候，内存不足导致GC，只回收老年代，STW，不进行内存整理)***
+```
+{Heap before GC invocations=0 (full 0):
+ par new generation   total 17088K, used 8468K [0x00000000fe200000, 0x00000000ff600000, 0x00000000ff600000)
+  eden space 13696K,  61% used [0x00000000fe200000, 0x00000000fea45148, 0x00000000fef60000)
+  from space 3392K,   0% used [0x00000000fef60000, 0x00000000fef60000, 0x00000000ff2b0000)
+  to   space 3392K,   0% used [0x00000000ff2b0000, 0x00000000ff2b0000, 0x00000000ff600000)
+ concurrent mark-sweep generation total 10240K, used 8192K [0x00000000ff600000, 0x0000000100000000, 0x0000000100000000)
+ Metaspace       used 3931K, capacity 4572K, committed 4864K, reserved 1056768K
+  class space    used 429K, capacity 460K, committed 512K, reserved 1048576K
+2022-10-14T14:18:03.124+0800: [GC (Allocation Failure) 2022-10-14T14:18:03.124+0800: [CMS[YG occupancy: 8468 K (17088 K)]2022-10-14T14:18:03.125+0800: [weak refs processing, 0.0030331 secs]2022-10-14T14:18:03.128+0800: [class unloading, 0.0002865 secs]2022-10-14T14:18:03.129+0800: [scrub symbol table, 0.0003037 secs]2022-10-14T14:18:03.129+0800: [scrub string table, 0.0002663 secs]: 8192K->6144K(10240K), 0.0055622 secs] 16660K->14612K(27328K), [Metaspace: 3931K->3931K(1056768K)], 0.0056602 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+Heap after GC invocations=1 (full 1):
+ par new generation   total 17088K, used 8468K [0x00000000fe200000, 0x00000000ff600000, 0x00000000ff600000)
+  eden space 13696K,  61% used [0x00000000fe200000, 0x00000000fea45148, 0x00000000fef60000)
+  from space 3392K,   0% used [0x00000000fef60000, 0x00000000fef60000, 0x00000000ff2b0000)
+  to   space 3392K,   0% used [0x00000000ff2b0000, 0x00000000ff2b0000, 0x00000000ff600000)
+ concurrent mark-sweep generation total 10240K, used 6144K [0x00000000ff600000, 0x0000000100000000, 0x0000000100000000)
+ Metaspace       used 3931K, capacity 4572K, committed 4864K, reserved 1056768K
+  class space    used 429K, capacity 460K, committed 512K, reserved 1048576K
+}
+```
+
+***CMS Serial GC (Old区内存分配的时候，内存充足，但是内存碎片导致GC，回收全堆，STW，进行内存整理)***
+```
+{Heap before GC invocations=1 (full 1):
+ par new generation   total 17088K, used 8468K [0x00000000fe200000, 0x00000000ff600000, 0x00000000ff600000)
+  eden space 13696K,  61% used [0x00000000fe200000, 0x00000000fea45148, 0x00000000fef60000)
+  from space 3392K,   0% used [0x00000000fef60000, 0x00000000fef60000, 0x00000000ff2b0000)
+  to   space 3392K,   0% used [0x00000000ff2b0000, 0x00000000ff2b0000, 0x00000000ff600000)
+ concurrent mark-sweep generation total 10240K, used 6144K [0x00000000ff600000, 0x0000000100000000, 0x0000000100000000)
+ Metaspace       used 3931K, capacity 4572K, committed 4864K, reserved 1056768K
+  class space    used 429K, capacity 460K, committed 512K, reserved 1048576K
+2022-10-14T14:18:03.130+0800: [Full GC (Allocation Failure) 2022-10-14T14:18:03.130+0800: [CMS: 6144K->7699K(10240K), 0.0032597 secs] 14612K->7699K(27328K), [Metaspace: 3931K->3931K(1056768K)], 0.0032847 secs] [Times: user=0.00 sys=0.00, real=0.00 secs] 
+Heap after GC invocations=2 (full 2):
+ par new generation   total 17088K, used 0K [0x00000000fe200000, 0x00000000ff600000, 0x00000000ff600000)
+  eden space 13696K,   0% used [0x00000000fe200000, 0x00000000fe200000, 0x00000000fef60000)
+  from space 3392K,   0% used [0x00000000fef60000, 0x00000000fef60000, 0x00000000ff2b0000)
+  to   space 3392K,   0% used [0x00000000ff2b0000, 0x00000000ff2b0000, 0x00000000ff600000)
+ concurrent mark-sweep generation total 10240K, used 7699K [0x00000000ff600000, 0x0000000100000000, 0x0000000100000000)
+ Metaspace       used 3931K, capacity 4572K, committed 4864K, reserved 1056768K
+  class space    used 429K, capacity 460K, committed 512K, reserved 1048576K
+}
+```
+
+#### 21.请讲一讲G1的垃圾收集过程是怎样的？
 
 G1收集器的过程涵盖4个阶段，即`年轻代GC`、`并发标记周期`、`混合收集`、`Full GC`。
 
@@ -765,7 +825,7 @@ G1收集器的过程涵盖4个阶段，即`年轻代GC`、`并发标记周期`�
 
 ***Full GC***如果在年轻代区间或者老年代区间执行拷贝存活对象操作的时候，找不到一个空闲的区间，就会在GC日志中看到诸如“to-space exhausted”这样的错误日志，则`G1 GC`会尝试去扩展可用的Java堆内存大小。如果扩展失败，`G1 GC`会触发它的失败保护机制并且启动单线程的`Full GC`动作。这个阶段，单线程会针对整个堆内存里的所有区间进行标记、清除、压缩等工作。
 
-#### 21.请讲一讲G1的并发标记周期的过程？
+#### 22.请讲一讲G1的并发标记周期的过程？
 
 >- 初始标记：这个阶段是独占式的，它会停止所有的Java线程，然后开始标记根节点可及的所有对象。这个阶段可以和年轻代回收同时执行，这样的设计方式主要是为了加快独占阶段的执行速度。
 >- 根区间扫描：这个阶段是并发的，可以和Java应用程序线程同时运行。在年轻代回收的初始标记阶段拷贝到幸存者区间的对象需要被扫描并被当作标记根元素。任何从幸存者区间过来的引用都会被标记，基于这个原理，幸存者区间也被称为根区间。根区间扫描阶段必须在下一个垃圾回收暂停之前完成，这是因为所有从幸存者区间来的引用需要在整个堆区间扫描之前完成标记工作。
@@ -773,7 +833,7 @@ G1收集器的过程涵盖4个阶段，即`年轻代GC`、`并发标记周期`�
 >- 最终标记：是整个标记阶段的最后一环。这个阶段是一个独占式阶段，在整个独占式过程中，G1 GC完全处理 遗留的STAB日志缓存、更新。这个阶段主要的目标是统计存活对象的数量，同时也对引用对象进行处理。如果你的应用程序使用了大量的引用对象，那么这个阶段耗时会有所增加。
 >- 清除阶段：在统计期间，G1 GC会识别完全空的区域和可供进行混合垃圾回收的区域。清理阶段在将空白区域重置并添加到空闲列表时为部分并发。完全空的Region不会被加到CSet中，都在这个阶段直接回收了。此阶段与应用程序是并发执行的。
 
-#### 22.请讲一讲G1的混合回收？
+#### 23.请讲一讲G1的混合回收？
 
 G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点，最终确认所有的存活对象和每一个区间的存活对象比例。当老年代的占有率达到了`-XX:InitiatingHeapOccupancyPercent=45`，一个并行标记循环被初始化并启动了。在最后阶段，G1计算每个老年代区间的存活对象数量，并且在清理阶段会对每个老年代区间进行打分。这个阶段完成之后，G1开始一次混合回收。
 
@@ -787,7 +847,7 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 
 `-XX:G1HeapWastePercent=5`，这个选项对于控制一次混合回收循环回收的老年代区间数量有很大的影响作用。对于每一次混合回收暂停，在每次YGC之后和再次发生Mixed GC之前，会检查垃圾占比是否达到此参数，只有达到了，下次才会发生Mixed GC。
 
-#### 23.请跟我讲讲跟G1收集器相关的JVM参数有哪些？
+#### 24.请跟我讲讲跟G1收集器相关的JVM参数有哪些？
 
 -XX:+UseG1GC：打开G1收集器开关<br>
 -XX:MaxGCPauseMillis：指定最大停顿时间<br>
@@ -795,11 +855,11 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 -XX:InitiatingHeapOccupancyPercent：当整个堆使用率达到多少触发并发标记周期的执行，默认值45。<br>
 -XX:G1HeapRegionSize：每个Region的大小，最小1M，最大32M，默认是堆内存的 1/2000。<br>
 
-#### 24.为什么G1不维护年轻代到老年代的记忆集？
+#### 25.为什么G1不维护年轻代到老年代的记忆集？
 
 `G1`分了`young GC`和`mixed gc`。`young gc`会选取`所有年轻代的region`进行收集。`midex gc`会选取`所有年轻代的region`和一些`收集收益高的老年代region`进行收集。所以`年轻代的region`都在收集范围内，所以不需要额外记录年轻代到老年代的跨代引用。
 
-#### 25.CMS和G1为了维持并发的正确性分别用了什么手段？
+#### 26.CMS和G1为了维持并发的正确性分别用了什么手段？
 
 `CMS`和`G1`算法都涉及对可达对象的并发标记。并发标记的主要问题是垃圾收集器在标记对象的过程中`Mutator线程`可能正在改变对象引用关系图，从而造成漏标和多标。**多标不会影响程序的正确性，只是造成所谓的浮动垃圾。但漏标则会导致可达对象被当做垃圾收集掉，从而影响程序的正确性。**
 
@@ -831,7 +891,7 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 **浮动垃圾的产生：**
 因为增量更新不记录删除的引用关系，当某个引用关系被标记后，用户线程将该引用关系断开，这个断开操作不会被记录，所以断开的对象就不会被清除，产生了浮动垃圾。
 
-#### 26.Metaspace相关的知识
+#### 27.Metaspace相关的知识
 
 >- 1.我们在指定`-XX:MetaspaceSize`的时候，虚拟机在启动的时候不会默认就申请`-XX:MetaspaceSize`指定的内存，一般初始容量是21807104（约20.8m）。
 >- 2.Metaspace由于使用不断扩容到-XX:MetaspaceSize参数指定的量，就会发生FGC；且之后每次Metaspace扩容都会发生FGC；
@@ -846,19 +906,19 @@ G1 GC通过初始化一个并行标记周期循环帮助标记对象的根节点
 >- 11.`-XX:MinMetaspaceFreeRatio`当进行过Metaspace GC之后，会计算当前Metaspace的空闲空间比，如果空闲比小于这个参数，那么虚拟机将增长Metaspace的大小。在本机该参数的默认值为40，也就是40%。设置该参数可以控制Metaspace的增长的速度，太小的值会导致Metaspace增长的缓慢，Metaspace的使用逐渐趋于饱和，可能会影响之后类的加载。而太大的值会导致Metaspace增长的过快，浪费内存；
 >- 12.`-XX:MaxMetaspaceFreeRatio`当进行过Metaspace GC之后， 会计算当前Metaspace的空闲空间比，如果空闲比大于这个参数，那么虚拟机会释放Metaspace的部分空间。在本机该参数的默认值为70，也就是70%；
 
-#### 27.线程大小相关的知识
+#### 28.线程大小相关的知识
 
 >- 1.`-XX:ThreadStackSize`和`-Xss`两个是一个意思，都是设置Java线程栈大小，但是`-Xss`需要添加上单位信息，而`-XX:ThreadStackSize`默认单位是KB，可以不需要添加；
 >- 2.`-XX:ThreadStackSize`在64位虚拟机中默认为1M，32位虚拟机为512K，需要4K对齐；
 >- 3.`-XX:CompilerThreadStackSize`设置编译线程栈大小，64位默认大小为4M，32位默认大小为2M，比如C2 CompilerThread等线程；
 
-#### 28.CodeCache Size相关参数
+#### 29.CodeCache Size相关参数
 
 >- 1.`-XX:InitialCodeCacheSize`是CodeCache初始化的时候的大小，但是随着CodeCache的增长不会降下来，但是CodeCache里的block是可以复用的；
 >- 2.`-XX:ReservedCodeCacheSize`是设置CodeCache最大值的内存值，默认值是48M，如果开启分层编译则是240M(默认JDK8是开启分层编译)，同时`-XX:ReservedCodeCacheSize`不能超过2G；
 >- 3.`-XX:CodeCacheMinimumFreeSpace`表示当CodeCache的可用大小不足这个值的时候，就会进行Code Cache Full的处理（处理期间整个jit会暂停，并且有且仅有一次打印code_cache_full到控制台，进行空间回收等操作）；
 
-#### 29.堆外内存相关参数
+#### 30.堆外内存相关参数
 
 >- 1.`-XX:MaxDirectMemorySize`设置堆外内存的大小，默认值是Xms-S0大小。
 
@@ -870,7 +930,7 @@ Java中在申请好的堆外内存是通过`DirectByteBuffer`类来关联，本�
 
 建议不要关闭`System.gc()`的执行，不要配置参数`-XX:+DisableExplicitGC`此参数。
 
-#### 30.堆外内存OOM怎么办？
+#### 31.堆外内存OOM怎么办？
 
 内存使用率不断上升，甚至开始使用`swap`内存，同时可能出现`GC`时间飙升，线程被`Block`等现象，通过`top`命令发现`Java`进程的`RES`甚至超过了`-Xmx`的大小。出现这些现象时，基本可以确定是出现了堆外内存泄漏。
 
@@ -882,7 +942,7 @@ JVM 的堆外内存泄漏，主要有两种的原因：
 
 如果`total`中的`committed`和`top`中的`RES`相差不大，则应为主动申请的堆外内存未释放造成的，如果相差较大，则基本可以确定是`JNI`调用造成的。如果是`JNI`造成的，可以通过[gperftools](https://github.com/gperftools/gperftools) + `Btrace`等工具，帮助我们分析出问题的代码。
 
-#### 31.GCLocker Initiated GC错误是什么？怎么解决？
+#### 32.GCLocker Initiated GC错误是什么？怎么解决？
 
 在`GC日志`中，出现`GC Cause`为`GCLocker Initiated GC`：
 ```
