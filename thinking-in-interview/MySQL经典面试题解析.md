@@ -908,7 +908,45 @@ truncate直接清空数据表数据并释放数据空间（可以理解为直接
 
 在MySQL 5.6版本中引入`eq_range_index_dive_limit`参数，默认值为`10`，通常业务在使用IN时会超过`10`个值，因此在MySQL 5.7版本中将默认阀值设为`200`。
 
-#### 7.下面SQL语句有加了limit 1性能反而差了？
+#### 7.Mysql中对于in的常量查询使用了哪些优化？
+
+`in (8,18,88,…)`这种值都是常量的`in`条件，看起来已经是最简单的形式了，执行过程似乎也没有什么可以优化的，但 MySQL 还是对它进行了优化。种`in`条件会有`2`种执行方式：
+- 二分法查找
+- 循环比较
+
+`MySQL`会优先使用二分法查找方式执行，如果不满足条件，再退而使用循环比较方式。
+- `in`条件括号中的所有值都是常量，也就是说不能包含任何表中的字段、也不能包含系统变量（如`@@tmp_table_size`）或自定义变量（如`@a`），总之是不能包含任何可以变化的东西；
+- `in`条件括号中所有值的数据类型必须相同。举个反例：`where field in (1,8,‘10’)`这种既包含整数又包含字符串的`in`条件就是不行的；
+- `in`条件括号中所有值的类型，以及字段本身的类型都不能是`json`。
+
+如果以上`3`个条件都满足，就具备使用二分法查找的基础了，之后就是对`in`条件括号中的值进行排序。`MySQL`对于`where row(filed1,field2) in ((1,5), (8,10), …)`这种`row`类型的`in`条件也会尽量使用二分法查找。
+
+**如果`in`条件括号中存在重复值，`MySQL`只会把`in`条件括号中的值原样加入数组，不会对数组中的元素去重。**
+
+#### 8.Mysql子查询的时候创建临时表的存储引擎的选择是什么？
+
+临时表会优先使用内存存储引擎，`MySQL 8`有两种内存存储引擎：
+- 从`5.7`继承过来的`MEMORY`引擎。
+- `8.0`新加入的`TempTable`引擎。
+
+`internal_tmp_mem_storage_engine`告诉`MySQL`选择哪个引擎，它的可选值为`TempTable`（默认值）、`MEMORY`。然而，`internal_tmp_mem_storage_engine`指定的引擎并不一定是最终的选择，有两种情况会导致临时表使用磁盘存储引擎`InnoDB`。
+- 如果我们指定了使用`MEMORY`引擎，而子查询结果中包含`BLOB`字段，临时表就只能使用`InnoDB`引擎了。
+- 如果系统变量`big_tables`的值为`ON`（默认为`OFF`），并且子查询中没有指定`SQL_SMALL_RESULT`Hint，临时表也只能使用`InnoDB`引擎。
+
+`big_tables = ON`是告诉`MySQL`我们要执行的所有`SQL`都包含很多记录，临时表需要使用`InnoDB`引擎。
+
+如果某天我们发现有一条执行频繁的`SQL`，虽然要使用临时表，但是记录数量比较少，使用内存存储引擎就足够用了。此时，我们就可以通过`Hint`告诉`MySQL`这条`SQL`的结果记录数量很少，`MySQL`就能心领神会的直接使用`internal_tmp_mem_storage_engine`中指定的内存引擎了。
+
+SQL可以这样指定`Hint`：
+```sql
+SELECT * FROM city WHERE country_id IN (
+  SELECT SQL_SMALL_RESULT address_id FROM address WHERE city_id < 10
+) AND city < 'China'
+```
+
+`MySQL`还会为临时表中的字段创建索引，`MEMORY`、`TempTable`引擎，都使用`HASH`索引。`InnoDB`引擎，使用`BTREE`索引。
+
+#### 9.下面SQL语句有加了limit 1性能反而差了？
 
 表语句如下：
 ```
