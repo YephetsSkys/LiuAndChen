@@ -338,6 +338,8 @@ java -Xmx3550m -Xms3550m -Xmn2g -Xss128k -XX:MaxMetaspace=16m -XX:NewRatio=4 -XX
 
 ![avatar](img/对象分配流程图.png)
 
+还有一种极为特殊的情况，正常情况下`Full GC`结束后`eden`区是空的，如果非空说明堆内存满了，`eden`区中的存活对象未拷贝至老年代中。那么会存在直接分配到`from survivor`空间中。
+
 #### 20.对象如何晋升到老年代？
 
 >- 1.对象年龄到期晋升，根据参数`-XX:MaxTenuringThreshold`设置的年龄来晋升到老年代，此值默认是15，对象头是有4bit记录的对象的年轻（4bit最大也就是15）。
