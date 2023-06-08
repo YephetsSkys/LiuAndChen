@@ -1392,7 +1392,59 @@ MySQL 高并发环境解决方案：分库 分表 读写分离 分布式 增加�
 
 未完待续
 
-## 十三、其他
+## 十三、MYSQL报错解决
+
+#### 1.MySQL报错：Out of sort memory, consider increasing server sort buffer size
+
+```sql
+mysql> show create table testsorterr3 \G
+*************************** 1. row ***************************
+Table: testsorterr3
+Create Table: CREATE TABLE `testsorterr3` (
+  `id` int(11) DEFAULT NULL,
+  `name1` varchar(510) NOT NULL,
+  `name2` varchar(510) NOT NULL,
+  UNIQUE KEY `name1` (`name1`,`name2`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8
+1 row in set (0.00 sec)
+
+mysql> select count(*) from testsorterr3 ;
++----------+
+| count(*) |
++----------+
+|        0 |
++----------+
+1 row in set (0.00 sec)
+
+mysql> show variables like 'sort_buffer_size';
++------------------+-------+
+| Variable_name    | Value |
++------------------+-------+
+| sort_buffer_size | 32768 |
++------------------+-------+
+1 row in set (0.02 sec)
+
+
+mysql>  select id from testsorterr3 order by id;
+ERROR 1038 (HY001): Out of sort memory, consider increasing server sort buffer size
+```
+
+当然问题解决很简单，加大`sort_buffer_size`设置即可，但是这里实际上为`32K`，我只是按照一个`int`类型的`4`字节类型进行排序而已，并且表中一条数据都没有报错显然有点让人摸不到头脑说`sort_buffer_size`设置小了。
+
+看一下排序申请内存的`MYSQL`源码：
+```
+const ulong min_sort_memory=
+      max<ulong>(MIN_SORT_MEMORY,
+                 ALIGN_SIZE(MERGEBUFF2 * (param.rec_length + sizeof(uchar*))));
+```
+
+其中`MIN_SORT_MEMORY`为`32K`，`MERGEBUFF2为15`。那么剩下的变量实际上就只有`param.rec_length`一个了，这实际上是计算出来的排序字段的长度。
+
+`又因为MYSQL如果没有设置主键，那么默认会按照唯一索引作为主键`，可以看到这里`3064`字节大概就是`510*2*3`的长度，因为我们这里非空唯一建为`(name1,name2)`Innodb表正是按照它进行组织的，而`sort_length`为`5`是int类型4字节再加上可以为`null`的`1字节也就是5字节`。
+
+那么`MERGEBUFF2 * (param.rec_length + sizeof(uchar*)))`忽略一个指针的大小，大概就是`15 *（3064+5）`约为`45k`左右大于了`sort buffer`设置的`32K`大小报错了。并且整个计算过程还没有真正的进行排序，因此即便是空表也会进行计算，和数据量无关。`就是MySQL认为sort buffer连一行排序数据都装不下`。
+
+## 十四、其他
 
 #### 1.数据三大范式是什么？
 
