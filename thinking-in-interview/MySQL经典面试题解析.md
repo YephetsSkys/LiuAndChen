@@ -908,7 +908,22 @@ truncate直接清空数据表数据并释放数据空间（可以理解为直接
 
 在MySQL 5.6版本中引入`eq_range_index_dive_limit`参数，默认值为`10`，通常业务在使用IN时会超过`10`个值，因此在MySQL 5.7版本中将默认阀值设为`200`。
 
-#### 7.Mysql中对于in的常量查询使用了哪些优化？
+但`eq_range_index_dive_limit`这个参数不一定非常准备，在`in`后面的条件个数达到`900`，依然可能会走了`range`索引的。
+
+#### 7.Mysql的in查询是如何决定到底是不是用索引的？
+
+除了上面的`eq_range_index_dive_limit`相关外，还与`range_optimizer_max_mem_size`参数有关。
+
+此参数用于控制范围优化器可用的内存，值为`0`表示`没有限制`。当值大于`0`时，优化器将跟踪在考虑范围访问方法时所消耗的内存。如果即将超过指定的限制，则放弃范围访问方法，转而考虑其他方法，包括全表扫描。如果发生这种情况，会出现以下警告(其中`N`是当前的`range_optimizer_max_mem_size`值)。
+```
+Warning    3170    Memory capacity of N bytes for 'range_optimizer_max_mem_size' exceeded. Range optimization was not done for this query.
+```
+
+`range_optimizer_max_mem_size`默认是`8M`，使用同样的`SQL`，`in`后面同样的条件为固定的`19900`个，
+
+![avatar](img/mysql/in到底走不走索引.png)
+
+#### 8.Mysql中对于in的常量查询使用了哪些优化？
 
 `in (8,18,88,…)`这种值都是常量的`in`条件，看起来已经是最简单的形式了，执行过程似乎也没有什么可以优化的，但 MySQL 还是对它进行了优化。种`in`条件会有`2`种执行方式：
 - 二分法查找
@@ -923,7 +938,7 @@ truncate直接清空数据表数据并释放数据空间（可以理解为直接
 
 **如果`in`条件括号中存在重复值，`MySQL`只会把`in`条件括号中的值原样加入数组，不会对数组中的元素去重。**
 
-#### 8.Mysql子查询的时候创建临时表的存储引擎的选择是什么？
+#### 9.Mysql子查询的时候创建临时表的存储引擎的选择是什么？
 
 临时表会优先使用内存存储引擎，`MySQL 8`有两种内存存储引擎：
 - 从`5.7`继承过来的`MEMORY`引擎。
@@ -946,7 +961,7 @@ SELECT * FROM city WHERE country_id IN (
 
 `MySQL`还会为临时表中的字段创建索引，`MEMORY`、`TempTable`引擎，都使用`HASH`索引。`InnoDB`引擎，使用`BTREE`索引。
 
-#### 9.下面SQL语句有加了limit 1性能反而差了？
+#### 10.下面SQL语句有加了limit 1性能反而差了？
 
 表语句如下：
 ```
