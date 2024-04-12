@@ -923,6 +923,12 @@ Warning    3170    Memory capacity of N bytes for 'range_optimizer_max_mem_size'
 
 ![avatar](img/mysql/in到底走不走索引.png)
 
+`in`两种情况会走全表扫描：
+- `in`后面条件导致`sql`大小超过`range_optimizer_max_mem_size`。
+- `in`后面条件个数接近或者等于表数量，执行引擎认为此时全表扫描更加合适。
+
+总体来说，`in`后面条件越少越好，假设一张表有`1000`万条数据，`in`后面的条件有`100000`个，这时候就算走了`range`索引，估计效率也好不到哪里。
+
 #### 8.Mysql中对于in的常量查询使用了哪些优化？
 
 `in (8,18,88,…)`这种值都是常量的`in`条件，看起来已经是最简单的形式了，执行过程似乎也没有什么可以优化的，但 MySQL 还是对它进行了优化。种`in`条件会有`2`种执行方式：
