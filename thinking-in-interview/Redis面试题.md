@@ -879,5 +879,10 @@ Redis里还有一个高级用法`布隆过滤器（Bloom Filter）`这个也能�
 
 ****
 
+### 六、文档博客
+
+[Redis实现访问控制频率](https://www.cnblogs.com/duanxz/p/4494072.html)
+
+
 未完待续
 
